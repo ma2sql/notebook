@@ -1,5 +1,5 @@
 ## Loss less Semisync Replication
-
+<br>
 #### 5.6까지의 Semisync replication
 1. 클라이언트로부터의 COMMIT이 요청됨
 2. 스토리지 엔진부터 COMMIT이 시작되며, 이 단계를 PREPARE라고 부른다.
@@ -29,4 +29,3 @@
 7. Binlog Dump 스레드는 전달받은 ACK를 클라이언트 스레드로 전송한다.
 8. 스토리지 엔진으로 COMMIT이 완료된다.
 9. 클라이언트 스레드는 OK패킷을 클라이언트에게 전송한다.
-
