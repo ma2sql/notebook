@@ -3,7 +3,7 @@
 ## 5.6까지의 Semisync replication
 ![](https://github.com/ma2sql/notebook/blob/master/images/lossless_semisync_01.jpg)
 1. 클라이언트로부터의 COMMIT이 요청됨
-2. 클라이언트 스레드(커넥션 스레드)는 XA 트랜잭션을 위해 먼전 InnoDB 엔진으로 PREPARE를 실행한다.
+2. 클라이언트 스레드(커넥션 스레드)는 XA 트랜잭션을 위해 먼전 InnoDB 엔진으로 PREPARE를 실행한다.
 3. 바이너리 로그를 기록한다.
 4. InnoDB 엔진으로 COMMIT을 실행하며 XA 트랜잭션이 완료된다.
 5. Binlog Dump 스레드에 의해 바이너리 로그가 슬레이브로 전송된다.
@@ -20,7 +20,7 @@
 ## 5.7.2 부터의 Lossless Semisync replication
 ![](https://github.com/ma2sql/notebook/blob/master/images/lossless_semisync_02.jpg)
 1. 클라이언트로부터의 COMMIT이 요청됨
-2. 클라이언트 스레드(커넥션 스레드)는 XA 트랜잭션을 위해 먼전 InnoDB 엔진으로 PREPARE를 실행한다.
+2. 클라이언트 스레드(커넥션 스레드)는 XA 트랜잭션을 위해 먼전 InnoDB 엔진으로 PREPARE를 실행한다.
 3. 바이너리 로그를 기록한다.
 4. Binlog Dump 스레드에 의해 바이너리 로그가 슬레이브로 전송된다.
 5. 전송된 바이너리 로그는 슬레이브의 IO Thread에 의해 릴레이 로그로 기록된다.
