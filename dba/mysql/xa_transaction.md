@@ -93,4 +93,5 @@ DELIMITER ;
 - 스토리지 엔진의 성공 유무가 역시 중요하며, 바이너리 로그의 성공/실패에 따라 롤백이 결정
 - 결국 데이터가 저장되는 곳은 스토리지 엔진이며, 바이너리 로그가 완전히 필수는 아니니까
 
+-----
 <a id="note1" href="#note1ref">[1]</a>: Format_description: 매 바이너리 로그 파일의 가장 첫 이벤트. "The first event of every binlog file is the Format_description event, which describes the server that wrote the file along with information about the contents and status of the file." [MySQL high availability 2nd edition. O'Reilly Media, p102]
