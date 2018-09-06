@@ -15,7 +15,7 @@ MySQL에서는 내부적으로 트랜잭션을 처리하는 과정에서, 스토
 *또한, 앞선 과정을 무사히 잘 넘겨왔으니?*
 
 ### Crash & Recovery
-1. 마지막 바이너리 로그를 열고, `Format_description`[^1] 이벤트를 찾는다.
+1. 마지막 바이너리 로그를 열고, `Format_description`<a href="#note1" id="note1ref"><sup>1</sup></a> 이벤트를 찾는다.
 2. `binlog-in-use` 플래그가 설정되어 있으면, 정상적으로 종료되지 못한 바이너리 로그라는 것으로 인식하고 XA Recovery를 시작
 *정상적이면 그냥 여기서 종료될 듯*
 3. 바이너리 로그에서 `xid events`를 읽고 모든 `XIDs` (XID 리스트)를 수집한다.
@@ -93,4 +93,4 @@ DELIMITER ;
 - 스토리지 엔진의 성공 유무가 역시 중요하며, 바이너리 로그의 성공/실패에 따라 롤백이 결정
 - 결국 데이터가 저장되는 곳은 스토리지 엔진이며, 바이너리 로그가 완전히 필수는 아니니까
 
-[^1]: Format_description: 매 바이너리 로그 파일의 가장 첫 이벤트. "The first event of every binlog file is the Format_description event, which describes the server that wrote the file along with information about the contents and status of the file." [MySQL high availability 2nd edition. O'Reilly Media, p102]
+<a id="note1" href="#note1ref"><sup>1</sup></a>: Format_description: 매 바이너리 로그 파일의 가장 첫 이벤트. "The first event of every binlog file is the Format_description event, which describes the server that wrote the file along with information about the contents and status of the file." [MySQL high availability 2nd edition. O'Reilly Media, p102]
