@@ -88,6 +88,5 @@ def main():
 ```
 
 
-
 http://docs.celeryq.org/en/latest/userguide/tasks.html#task-synchronous-subtasks
 task내에서 다시 task를 호출하게되면, get()을 이용하여 task를 동기화하고 값을 가져오는 것은 좋지 않다. 비효율적이기도 하고 데드락이 발생할 수도 있기 때문이다. 이러한 경우 그냥 callback을 이용해야할 것 같다.
