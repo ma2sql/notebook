@@ -41,7 +41,7 @@ mysql> SET mroonga_boolean_mode_syntax_flags = "SYNTAX_SCRIPT";
 TODO
 
 ### 3.4 mroonga_default_parser
-버전 5.04에서 비권장: Use [mroonga_default_tokenizer](#3.4-mroonga_default_tokenizer) instead.
+버전 5.04에서 비권장: Use [mroonga_default_tokenizer](#35-mroonga_default_tokenizer) instead.
 기본값은 전문검색 파서. 기본값은 configure의 `with-default-parser` 옵션으로 지정할 수 있습니다. (지정하지 않는 경우에는 `TokenBigram`).
 
 전문 검색 파서로서 `TokenBiagramSplitSymbolAlphaDigit`을 사용하는 예입니다. 이 예에서는 `body_index` 전문 검색 인덱스는 `TokenBiagramSplitSymbolAlphaDigit`을 사용합니다.
