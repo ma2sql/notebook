@@ -42,7 +42,7 @@ TODO
 
 ### 3.4 mroonga_default_parser
 버전 5.04에서 비권장: Use [mroonga_default_tokenizer](#3.4-mroonga_default_tokenizer) instead.
-기본값은 전문검색 파서. 기본값은 configure의 `with-default-parser` 옵션으로 지정할 수 있습니다. (지정하지 않는 경우에는 `TokenBigram`).
+기본값은 전문검색 파서. 기본값은 configure의 `with-default-parser` 옵션으로 지정할 수 있습니다. (지정하지 않는 경우에는 `TokenBigram`).
 
 전문 검색 파서로서 `TokenBiagramSplitSymbolAlphaDigit`을 사용하는 예입니다. 이 예에서는 `body_index` 전문 검색 인덱스는 `TokenBiagramSplitSymbolAlphaDigit`을 사용합니다.
 
@@ -212,8 +212,8 @@ ERROR | Mroonga를 사용하고 있는 API의 에러 로그 메시지를 출력�
 WARNING | 잘못 지정된 인수등의 경고 로그 메시지를 출력한다.
 NOTICE | 설정이나 상태의 변화를 표시하는 로그 메시지를 출력한다.
 INFO | 파일 조작 등의 정보를 로그 메시지로 표시한다.
-DEBUG | 디버그 메시지를 출력한다.<br> Mroonga개발자나 버그 리포팅의 경우에 추천합니다.
-DUMP | 테스트툴 대상의 덤프 메시지를 출력합니다.
+DEBUG | 디버그 메시지를 출력한다.<br> Mroonga개발자나 버그 리포팅의 경우에 추천합니다.
+DUMP | 테스트툴 대상의 덤프 메시지를 출력합니다.
 
 ```sql
 mysql> SHOW VARIABLES LIKE 'mroonga_log_level';
@@ -237,7 +237,7 @@ mysql> SHOW VARIABLES LIKE 'mroonga_log_level';
 ```
 
 ### 3.16 mroonga_match_escalation_thresh
-매치 방법을 에스컬레이션 할지 여부를 결정하는 역치이다. 매치 방법에 대해서는 [Groonga  검색 사양(일본어)](http://groonga.org/docs/spec/search.html)를 참고할 것.
+매치 방법을 에스컬레이션 할지 여부를 결정하는 역치이다. 매치 방법에 대해서는 [Groonga  검색 사양(일본어)](http://groonga.org/docs/spec/search.html)를 참고할 것.
 
 기본값은 Groonga의 기본값과 같다. 기본 설정으로 인스톨한 경우에는 `0`이 된다. 이 변수의 스코프는 `Global`과 `Session` 양쪽 모두로, my.cnf 또는 `SET GLOBAL mroonga_match_escalation_threshold = THRESHOLD;`로 기본값을 설정할 수 있다.
 
