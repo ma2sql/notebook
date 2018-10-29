@@ -1,6 +1,6 @@
 # Mrooga 7.0.9 Variables
 
-###3.1 mroonga_action_on_fulltext_query_error
+### 3.1 mroonga_action_on_fulltext_query_error
 전문 검색 쿼리 에러의 동작 방식
 `mroonga_action_on_fulltext_query_error`의 기본값은 `ERROR_AND_LOG`입니다. 이것은 종래의 mroonga와 같은 동작 방식입니다.
 사용 가능한 값은 아래와 같습니다.
@@ -22,7 +22,7 @@ mysql> SHOW VARIABLES LIKE 'mroonga_action_on_fulltext_query_error';
 1 row in set (0.00 sec)
 ```
 
-###3.2 mroonga_boolean_mode_syntax_flags
+### 3.2 mroonga_boolean_mode_syntax_flags
 `MATCH () AGAINST ('...' IN BOOLEAN MODE)`의 구문을 커스터마이팅하는 플래그
 이 변수는 시스템 글로벌/세션 각각 적용 가능하다.
 
@@ -37,10 +37,10 @@ ALLOW_LEADING_NOT | 쿼리 구문에서 `-NOT_INCLUDE_KEYWORD ...` 구문을 사
 ```sql
 mysql> SET mroonga_boolean_mode_syntax_flags = "SYNTAX_SCRIPT";
 ```
-###3.3 mroonga_database_path_prefix
+### 3.3 mroonga_database_path_prefix
 TODO
 
-###3.4 mroonga_default_parser
+### 3.4 mroonga_default_parser
 버전 5.04에서 비권장: Use [mroonga_default_tokenizer](#3.4-mroonga_default_tokenizer) instead.
 기본값은 전문검색 파서. 기본값은 configure의 `with-default-parser` 옵션으로 지정할 수 있습니다. (지정하지 않는 경우에는 `TokenBigram`).
 
@@ -55,7 +55,7 @@ CREATE TABLE diaries (
 ) DEFAULT CHARSET UTF8;
 ```
 
-###3.5 mroonga_default_tokenizer
+### 3.5 mroonga_default_tokenizer
 버전 5.04에서 추가.
 
 전문 검색 용의 기본 토크나이저. 기본값은 configure의 --with-default-tokenizer=TOKENIZER 옵션으로 지정할 수 있습니다. 이 옵션을 지정하지 않으면 `TokenBiagram`이 지정됩니다.
@@ -71,10 +71,10 @@ CREATE TABLE diaries (
 ) DEFAULT CHARSET UTF8;
 ```
 
-###3.6 mroonga_default_wrapper_engine
+### 3.6 mroonga_default_wrapper_engine
 TODO
 
-###3.7 mroonga_dry_write
+### 3.7 mroonga_dry_write
 Groonga 데이터베이스에 실제 데이터를 쓸 지를 지정합니다. 기본값은 `OFF`로, 실제로 groonga 데이터베이스에 데이터를 기록합니다. 통상은 이 값을 변경할 필요는 없습니다. 이 변수는 벤치마크 테스트 시점에 편리합니다. 이 값을 `ON`으로 두는 것으로 MySQL과 Mroonga만의 처리 시간을 계측하는 것이 가능합니다. 이 시간에는 Groonga의 처리 시간은 포함되지 않습니다.
 
 ```sql
@@ -98,7 +98,7 @@ mysql> SHOW VARIABLES LIKE 'mroonga_dry_write';
 1 row in set (0.00 sec)
 ```
 
-###3.8 mroonga_enable_optimization
+### 3.8 mroonga_enable_optimization
 최적화를 설정할지 여부를 지정합니다. 기본값은 `ON`으로 최적화를 적용하도록 되어 있습니다. 통상은 이 값을 변경할 필요는 없습니다. 이 옵션은 벤치마크 시점에 편리합니다.
 
 ```sql
@@ -122,7 +122,7 @@ mysql> SHOW VARIABLES LIKE 'mroonga_enable_optimization';
 1 row in set (0.00 sec)
 ```
 
-###3.9 mroonga_libgroonga_support_lz4
+### 3.9 mroonga_libgroonga_support_lz4
 Groonga 라이브러리의 LZ4 지원 여부
 
 ```sql
@@ -134,7 +134,7 @@ mysql> SHOW GLOBAL VARIABLES LIKE 'mroonga_libgroonga_support_lz4';
 +--------------------------------+-------+
 ```
 
-###3.10 mroonga_libgroonga_support_zlib
+### 3.10 mroonga_libgroonga_support_zlib
 Groonga 라이브러리의 zlib 지원 여부
 
 ```sql
@@ -146,7 +146,7 @@ mysql> SHOW GLOBAL VARIABLES LIKE 'mroonga_libgroonga_support_zlib';
 +---------------------------------+-------+
 ```
 
-###3.11 mroonga_libgroonga_support_zstd
+### 3.11 mroonga_libgroonga_support_zstd
 Groonga 라이브러리의 Zstandard 지원 여부
 
 ```sql
@@ -158,7 +158,7 @@ mysql> SHOW GLOBAL VARIABLES LIKE 'mroonga_libgroonga_support_zstd';
 +---------------------------------+-------+
 ```
 
-###3.12 mroonga_libgroonga_version
+### 3.12 mroonga_libgroonga_version
 groonga의 라이브러리 버전
 
 ```sql
@@ -171,10 +171,10 @@ mysql> SHOW VARIABLES LIKE 'mroonga_libgroonga_version';
 1 row in set (0.00 sec)
 ```
 
-###3.13 mroonga_lock_timeout
+### 3.13 mroonga_lock_timeout
 TODO
 
-###3.14 mroonga_log_file
+### 3.14 mroonga_log_file
 Mroonga의 로그 파일명. 기본값은 `groonga.log`.
 
 ```sql
@@ -198,7 +198,7 @@ mysql> SHOW VARIABLES LIKE 'mroonga_log_file';
 1 row in set (0.00 sec)
 ```
 
-###3.15 mroonga_log_level
+### 3.15 mroonga_log_level
 Mroonga의 로그의 출력 레벨. 기본값은 `NOTICE`.
 다음은 사용 가능한 `mroonga_log_level`의 리스트이다.
 
@@ -236,7 +236,7 @@ mysql> SHOW VARIABLES LIKE 'mroonga_log_level';
 1 row in set (0.00 sec)
 ```
 
-###3.16 mroonga_match_escalation_thresh
+### 3.16 mroonga_match_escalation_thresh
 매치 방법을 에스컬레이션 할지 여부를 결정하는 역치이다. 매치 방법에 대해서는 [Groonga  검색 사양(일본어)](http://groonga.org/docs/spec/search.html)를 참고할 것.
 
 기본값은 Groonga의 기본값과 같다. 기본 설정으로 인스톨한 경우에는 `0`이 된다. 이 변수의 스코프는 `Global`과 `Session` 양쪽 모두로, my.cnf 또는 `SET GLOBAL mroonga_match_escalation_threshold = THRESHOLD;`로 기본값을 설정할 수 있다.
@@ -288,11 +288,11 @@ SELECT * FROM diaries WHERE MATCH (tags) AGAINST ("gr" IN BOOLEAN MODE);
 -- 1 Hello groonga!  groonga install
 ```
 
-###3.17 mroonga_max_n_records_for_estimate
+### 3.17 mroonga_max_n_records_for_estimate
 버전 5.02에서 추가
 TODO
 
-###3.18 mroonga_enable_operations_recording
+### 3.18 mroonga_enable_operations_recording
 리커버리를 위해 오퍼레이션을 기록할지 여부를 설정하는 변수.
 기본값은 `ON`으로 되어 있고, 이것은 오퍼레이션을 Groonga 데이터베이스 기록하는 것을 의미한다.
 변경된 설정을 반영하기 위해서는 `FLUSH TABLES` 명령으로 다시 데이터베이스를 열(reopen) 필요가 있다.
@@ -313,7 +313,7 @@ mysql> SHOW GLOBAL VARIABLES LIKE 'mroonga_enable_operations_recording';
 ```
 
 
-###3.19 mroonga_vector_column_delimiter
+### 3.19 mroonga_vector_column_delimiter
 벡터 컬럼을 출력할 때의 구분자 문자. 기본값은 공백이다.
 
 ```sql
@@ -337,7 +337,7 @@ mysql> SHOW GLOBAL VARIABLES LIKE 'mroonga_vector_column_delimiter';
 +---------------------------------+-------+
 ```
 
-###3.20 mroonga_version
+### 3.20 mroonga_version
 Mroonga의 버전.
 
 ```sql
@@ -350,7 +350,7 @@ mysql> SHOW VARIABLES LIKE 'mroonga_version';
 1 row in set (0.00 sec)
 ```
 
-###3.21 mroonga_condition_push_down_type
+### 3.21 mroonga_condition_push_down_type
 버전 7.10에서 추가.
 
 컨디션 푸시 다운 서포트를 어떻게 유효화할지를 제어한다.
