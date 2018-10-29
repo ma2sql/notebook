@@ -357,6 +357,7 @@ mysql> SHOW VARIABLES LIKE 'mroonga_version';
 기본값은 `ONE_FULL_TEXT_SEARCH`이다. 이 때, `WHERE`구에 `MATCH AGAINST`가 1개만 있는 경우에만 컨디션 푸시 다운을 유효화한다.
 
 이하는 유효한 값의 목록이다.
+
 Value | Description
 ------|------------
 NONE | 컨디션 푸시 다운을 사용하지 않는다.
