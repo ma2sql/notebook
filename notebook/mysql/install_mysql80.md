@@ -1,10 +1,10 @@
 # Installation MySQL 8.0
-
 Centos7 환경에서 MySQL 8.0을 설치하는 방법을 알아본다.
+<br/>
 참고: https://dev.mysql.com/doc/refman/8.0/en/binary-installation.html
 
 
-### 1. 설치
+## 1. 설치
 1. 필요한 패키지 설치
 ```bash
 yum search libaio  # search for info
@@ -138,7 +138,7 @@ export PATH
 source ~/.bash_profile
 ```
 
-### 2. my.cnf
+## 2. my.cnf
 우선 경로만 간단히 지정한 설정 파일을 만들고, 이를 사용하자.
 그리고 나머지는 8.0을 연구하면서 천천히 추가해나가자.
 
