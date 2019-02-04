@@ -2,7 +2,7 @@
 
 ### Check version of RDB file
 ```
-hexdump -C dump.rdb
+hexdump -C dump.rdb -n1
 ...
 00000000  52 45 44 49 53 30 30 30  36 fe 00 0d 26 6d 3a 34  |REDIS0006...&m:4|
 00000010  38 39 66 30 34 37 32 2d  62 62 35 34 2d 34 39 31  |89f0472-bb54-491|
