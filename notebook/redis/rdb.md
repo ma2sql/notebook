@@ -1,7 +1,7 @@
 # RDB
 
 ### Check version of RDB file
-```bash
+```
 hexdump -C dump.rdb
 ...
 00000000  52 45 44 49 53 30 30 30  36 fe 00 0d 26 6d 3a 34  |REDIS0006...&m:4|
