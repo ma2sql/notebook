@@ -1,0 +1,27 @@
+# Sentinel Failover의 이해
+- 새롭게 마스터가 될 슬레이브를 선출한 다음, slaveof no one 명령이 실행된다.
+  - sentinelSendSlaveOf 의 실행
+    - MULTI
+    - SLAVEOF NO ONE
+    - CONFIG REWRITE
+    - CLIENT KILL TYPE normal
+    - EXEC
+  - 이 단계에서 신규 마스터에 대해서는 이미 Write가 허용되는 상태가 되는 것 같다.
+- 기존 master로 연결되었던 전 슬레이브에 대해, slaveof master port 명령이 실행된다.
+  - sentinelSendSlaveOf 의 실행
+    - MULTI
+    - SLAVEOF MASTER_IP MASTER_PORT
+    - CONFIG REWRITE
+    - CLIENT KILL TYPE normal
+    - EXEC
+- Deny Write는 Role에 의해 결정되는 듯
+  - slave-read-only=yes 에 의해서 보호됨 
+- 프로모션이 발생하면서, 곧바로 상태 정보의 갱신이 발생하는 것 같다.
+  - +config-update-from, +switch-master
+  - 기존 마스터가 슬레이브로 전환하기도 전에...
+- Reconfig Script에 의존하는 경우 데이터 손실이 있을 수 있음
+- Reconfig Script의 수행 시점
+  - +failover-state-reconf-slaves (Sentinel Leader에서 실행됨)
+    - Failover 시작 시점에, Sentinel Leader는 config_epoch는 이 지점에서 최신값으로 변경해서 갖고 있는 듯?
+  - +config-update-from, +switch-master (Sentinel Observer에서 실행됨)
+    - 마스터 프로모션이 모두 완료되고 나면, INFO 정보를 갱신하면서 실행되는 듯
