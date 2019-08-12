@@ -43,8 +43,6 @@ Redis 에서는 다음의 3가지의 fsync 관련 모드를 지원한다.
 - always: 매 write마다 fsync를 수행한다. 느리지만 가장 안전하다.
 - everysec: fsync는 오직 1초마다 한번씩만 수행된다. 절충안.
 
-The default is "everysec", as that's usually the right compromise between speed and data safety. It's up to you to understand if you can relax this to "no" that will let the operating system flush the output buffer when it wants, for better performances (but if you can live with the idea of some data loss consider the default persistence mode that's snapshotting), or on the contrary, use "always" that's very slow but a bit safer than everysec.
-
 디폴트는 `everysec`로, 일반적으로는 성능과 안정성의 올바른 타협점이다.
 당신의 이해에 달렸는데, 만약 `no`를 선택한다면 좀 더 편해질 수 있다. 왜냐하면 fsync를 OS에게 맡김으로써, fsync 횟구가 줄어들어 좀 더 나은 성능을 보여줄거니까. (다만, 좀 더 데이터가 손실되어도 좋다면 RDB를 써도 좋겠지...) 아니면 반대로, `always`를 선택하면 많이 느리겠지만 everysecc보다도 더 안정성을 가질 수 있을 것이다.
 
