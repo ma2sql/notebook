@@ -4,12 +4,16 @@ tags: [python]
 
 # pyinstaller를 사용한 단일 바이너리 파일 만들기
 
+
+- [배경](#배경)
 - [pyinstaller](#pyinstaller)
 - [Install](#install)
 - [Usage](#usage)
 - [pyenv 환경에서의 빌드](#pyenv-환경에서의-빌드)
     - [OSError: Python library not found: libpython3.7.so.1.0, libpython3.7m.so.1.0, libpython3.7mu.so.1.0](#oserror-python-library-not-found-libpython37so10-libpython37mso10-libpython37muso10)
     - [ERROR: The Python ssl extension was not compiled. Missing the OpenSSL lib?](#error-the-python-ssl-extension-was-not-compiled-missing-the-openssl-lib)
+- [Reference](#reference)
+
 
 ## 배경
 개발된 파이썬 버전, OS 환경, 의존성 라이브러리 설치 등등 DBA로서 사용하는 파이썬 스크립트의 규모에 비해 필요한 환경을 준비하는 것은 매우 번거롭다. 파이썬으로 작성된 스크립트를 실행이 가능한 단일 바이너리 파일로 만들어 배포하는 형태로 사용하면, 이러한 것들이 매우 간편해질 것이다. 바로 이 부분에 도움을 줄 수 있는 것이 `PyInstaller` 이다.
