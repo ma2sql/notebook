@@ -4,11 +4,11 @@ tags: [redis, shell]
 
 # 자주 사용하는 스크립트
 
-# Table Of Content
+## Table Of Content
 <!-- TOC -->
 
 - [자주 사용하는 스크립트](#자주-사용하는-스크립트)
-- [Table Of Content](#table-of-content)
+    - [Table Of Content](#table-of-content)
     - [Swap 사용량 조사: 1](#swap-사용량-조사-1)
     - [Swap 사용량 조사: 2](#swap-사용량-조사-2)
     - [redis 서버의 swap 사용량](#redis-서버의-swap-사용량)
