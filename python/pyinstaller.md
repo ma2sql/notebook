@@ -49,3 +49,6 @@ continue with installation? (y/N) y
 ```bash
 export LD_LIBRARY_PATH=$HOME/.pyenv/versions/3.6.6/lib
 ```
+
+## Reference
+- https://7me.oji.0j0.jp/2018/09/13/pyinstaller-pyenv-oserror-typeerror-library-not-found/
