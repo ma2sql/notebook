@@ -1,3 +1,7 @@
+---
+tags: [redis, shell]
+---
+
 # 자주 사용하는 스크립트
 
 # Table Of Content
@@ -5,18 +9,33 @@
 
 - [자주 사용하는 스크립트](#자주-사용하는-스크립트)
 - [Table Of Content](#table-of-content)
-    - [Swap 사용량 조사](#swap-사용량-조사)
+    - [Swap 사용량 조사: 1](#swap-사용량-조사-1)
+    - [Swap 사용량 조사: 2](#swap-사용량-조사-2)
     - [redis 서버의 swap 사용량](#redis-서버의-swap-사용량)
 
 <!-- /TOC -->
 
-## Swap 사용량 조사
+## Swap 사용량 조사: 1
 ```
 (echo "COMM PID SWAP"; 
     for file in /proc/*/status ; do 
         awk '/^Pid|VmSwap|Name/{printf $2 " " $3 "\n"}' $file; 
     done | grep kB | grep -wv "0 kB" | sort -k 3 -n -r \
 ) | column -t
+```
+
+## Swap 사용량 조사: 2
+*https://blog.sleeplessbeastie.eu/2016/12/26/how-to-display-processes-using-swap-space/*
+```bash
+find /proc -maxdepth 2 -path "/proc/[0-9]*/status" -readable \
+-exec awk -v FS=":" '{
+    process[$1]=$2;
+    sub(/^[ \t]+/,"",process[$1]);
+} END {
+    if(process["VmSwap"] && process["VmSwap"] != "0 kB") {
+        printf "%10s %-30s %20s\n",process["Pid"],process["Name"],process["VmSwap"]
+}}' '{}' \; \
+ | awk '{print $(NF-1),$0}' | sort -h | cut -d " " -f2-
 ```
 
 ## redis 서버의 swap 사용량
