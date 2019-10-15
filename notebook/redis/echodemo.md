@@ -1,3 +1,7 @@
+---
+tags: [redis]
+---
+
 # Echo Server
 
 Redis의 이벤트 모델을 이해하기 위해, echodemo라는 예제를 직접 실행하여 본다.
