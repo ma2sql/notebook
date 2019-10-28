@@ -15,7 +15,7 @@ tags: [redis]
 
 기존(old) 마스터의 쿼리 처리를 멈춘다(블로킹)고 되어있다. 이후 master-slave간의 동기화를 마치고, failover 를 통해 role 을 변경한 다음, old 마스터로 블로킹을 해제하고, 리다이렉션을 발생시킨다. 그렇다면 old 마스터의 쿼리는 어떠한 식으로 멈출 수 있을까? 또한, 이에 대해 레디스 클라이언트는 어떻게 반응하게 될까?
 
-** client.c **
+**client.c**
 ```c
     ...
     } else if (type == CLUSTERMSG_TYPE_MFSTART) {
