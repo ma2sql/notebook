@@ -115,7 +115,7 @@ class ClusterNode:
             return
 
         try:
-            self._r = StrictRedis(host=self._info['host'], 
+            self._r = redis.StrictRedis(host=self._info['host'], 
                                   port=self._info['port'], 
                                   password=self._password,
                                   timeout=60)
@@ -146,16 +146,80 @@ class ClusterNode:
             sys.exit(1)
 
 
+    def _parse_slots(self, slots):
+        migrating = {}
+        importing = {}
+        parsed_slots = []
+        for s in slots:
+            # ["[5461", "<", "b35b55daf26e84acdf17fed30d46ca97ccdd9169]"]
+            if len(s) == 3:
+                slot, direction, target = s
+                slot = int(slot[1:])
+                target = target[:-1]
+                if s[1] == '>':
+                    migrating[slot] = target
+                elif s[1] == '<':
+                    importing[slot] = target
+            # ["0", "5460"]
+            elif len(s) == 2:
+                start = int(s[0])
+                end = int(s[1]) + 1
+                parsed_slots.append(range(start, end))
+            # ["5462"]
+            else:
+                parsed_slots.append(int(s[0]))
+
+        return parsed_slots, migrating, importing
+
+
+    def load_info(self, o=None):
+        self._connect()
+
+        nodes = self._r.cluster('NODES')
+        for addr, node in nodes.items():
+            info = {
+                'name': node['node_id'],
+                'addr': addr.split('@')[0],
+                'flags': node['flags'].split(','),
+                'replicate': (node['master_id'] 
+                              if node['master_id'] != '-' 
+                              else False),
+                'ping_sent': node['last_ping_sent'],
+                'ping_recv': node['last_pong_recv'],
+                'link_status': node['connected'],
+            }
+
+            if 'myself' in info['flags']:
+                self._info.update(info)
+                self._slots = {}
+                self._dirty = False
+
+                if node['slots']:
+                    slots, migrating, importing = self._parse_slots(node['slots'])
+                    self._info['slots'] = slots
+                    self._info['migrating'] = migrating
+                    self._info['importing'] = importing
+                
+                cluster_info = self._r.cluster('INFO')
+                for k, v in cluster_info.items():
+                    self._info[k] = int(v) if k != 'cluster_state' else v
+
+            elif o.get('getfriends'):
+                self._friends.append(info)
+
+
+
 class RedisTrib:
     def __init__(self):
         self._nodes = []
         self._fix = False
         self._errors = []
         self._timeout = MIGREATE_DEFAULT_TIMEOUT
+        self._replicas = 0
     
 
     def create_cluster(self, addrs, **opt):
-        replicas = opt.get('replicas') or 0
+        self._replicas = opt.get('replicas') or 0
 
         print('>>> Creating cluster')
         for addr in addrs:
@@ -165,6 +229,21 @@ class RedisTrib:
             node.load_info()
             node.assert_empty()
             nodes.append(node)
+        
+        _check_create_parameters()
+        alloc_slots()
+
+    def _check_create_parameters(self):
+        masters = len(self._nodes) / (self._replicas+1)
+        if masters < 3:
+            print('*** ERROR: Invalid configuration for cluster creation.')
+            print('*** Redis Cluster requires at least 3 master nodes.')
+            print('*** This is not possible with {}'\
+                  ' nodes and {} replicas per node.'.format(
+                            len(self._nodes), self._replicas))
+            print('*** At least {} nodes are required.'.format(
+                             3 * (self._replicas + 1)))
+            sys.exit(1)
 
 
     def _add_node(self, node):
