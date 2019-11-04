@@ -1,0 +1,82 @@
+{
+    "192.168.56.101:6379@16379": {
+        "node_id": "6da7a15de1d69786919b6641c19ebd0194e99bf9",
+        "flags": "slave",
+        "master_id": "e5c2eae89ea8c9c8f19bb0adc88f996e416f5454",
+        "last_ping_sent": "0",
+        "last_pong_rcvd": "1572408954743",
+        "epoch": "3",
+        "slots": [],
+        "connected": true
+    },
+    "192.168.56.102:6379@16379": {
+        "node_id": "e5c2eae89ea8c9c8f19bb0adc88f996e416f5454",
+        "flags": "master",
+        "master_id": "-",
+        "last_ping_sent": "0",
+        "last_pong_rcvd": "1572408952000",
+        "epoch": "3",
+        "slots": [
+            [
+                "10923",
+                "16383"
+            ]
+        ],
+        "connected": true
+    },
+    "192.168.56.103:6379@16379": {
+        "node_id": "bc401b99221a31dd546bbc133d9d1e8eae00aefa",
+        "flags": "myself,master",
+        "master_id": "-",
+        "last_ping_sent": "0",
+        "last_pong_rcvd": "1572408953000",
+        "epoch": "9",
+        "slots": [
+            [
+                "0",
+                "5460"
+            ],
+            [
+                "[5461",
+                "<",
+                "b35b55daf26e84acdf17fed30d46ca97ccdd9169]"
+            ]
+        ],
+        "connected": true
+    },
+    "192.168.56.104:6379@16379": {
+        "node_id": "d2ae009107b56802ebcce6a1610282238323856e",
+        "flags": "slave",
+        "master_id": "bc401b99221a31dd546bbc133d9d1e8eae00aefa",
+        "last_ping_sent": "0",
+        "last_pong_rcvd": "1572408954000",
+        "epoch": "9",
+        "slots": [],
+        "connected": true
+    },
+    "192.168.56.105:6379@16379": {
+        "node_id": "dc39f50e925e398eb45c6435fd3b747c5558e2a4",
+        "flags": "slave",
+        "master_id": "b35b55daf26e84acdf17fed30d46ca97ccdd9169",
+        "last_ping_sent": "0",
+        "last_pong_rcvd": "1572408955000",
+        "epoch": "6",
+        "slots": [],
+        "connected": true
+    },
+    "192.168.56.106:6379@16379": {
+        "node_id": "b35b55daf26e84acdf17fed30d46ca97ccdd9169",
+        "flags": "master",
+        "master_id": "-",
+        "last_ping_sent": "0",
+        "last_pong_rcvd": "1572408955744",
+        "epoch": "6",
+        "slots": [
+            [
+                "5461",
+                "10922"
+            ]
+        ],
+        "connected": true
+    }
+}
