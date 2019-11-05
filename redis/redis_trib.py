@@ -4,10 +4,13 @@ import random
 from collections import defaultdict
 import time
 
+verbose = True
+
 
 MIGREATE_DEFAULT_TIMEOUT = 60000
 MIGREATE_DEFAULT_PIPELINE = 10
 CLUSTER_HASH_SLOTS = 16384
+REBALANCE_DEFAULT_THRESHOLD = 2
 
 class ClusterNode:
     def __init__(self, addr, password=None):
@@ -354,7 +357,7 @@ class RedisTrib:
     # :update  -- Update nodes.info[:slots] for source/target nodes.
     # :quiet   -- Don't print info messages.
     def _move_slot(self, source, target, slot, **kwargs):
-        o = {**kwargs, 'pipeline': MIGREATE_DEFAULT_PIPELINE}
+        o = {'pipeline': MIGREATE_DEFAULT_PIPELINE, **kwargs}
 
         # We start marking the slot as importing in the destination node,
         # and the slot as migrating in the target host. Note that the order of
@@ -697,9 +700,19 @@ class RedisTrib:
             pass
         return node
 
+    
+    # Like get_node_by_name but the specified name can be just the first
+    # part of the node ID as long as the prefix in unique across the
+    # cluster.
+    def _get_node_by_abbreviated_name(self, name):
+        candidates = [n for n in self._nodes
+                        if n.info['name'].startswith(name.lower())]
+        return candidates[0] if candidates else None
+
 
     def _reset_nodes(self):
         self._nodes = []
+
 
     def _is_config_consistent(self):
         signatures=[]
@@ -1143,7 +1156,7 @@ class RedisTrib:
 
 
     def reshard_cluster(self, addr):
-        o = {**kwargs, 'pipeline': MIGREATE_DEFAULT_PIPELINE}
+        opt = {'pipeline': MIGREATE_DEFAULT_PIPELINE, **kwargs}
 
         if kwargs.get('password'):
             self._password = kwargs['password']
@@ -1291,8 +1304,164 @@ class RedisTrib:
         for e in table:
             print('    Moving slot {} from {}'.format(
                   e['slot'], e['source'].info['name']))
+    
 
-            
+    def rebalance_cluster(self, addr):
+        opt = {'pipeline': MIGREATE_DEFAULT_PIPELINE,
+             'threshold': REBALANCE_DEFAULT_THRESHOLD,
+             **kwargs}
+
+        if kwargs.get('password'):
+            self._password = kwargs['password']
+
+        # Load nodes info before parsing options, otherwise we can't
+        # handle --weight.
+        self._load_cluster_info_from_node(addr)
+
+        threshold = int(opt.get('threshold'))
+        # Unused
+        autoweights = opt.get('auto-weights')
+        weights = {}
+        for w in opt.get('weight'):
+            field, weight = w.split('=')
+            node = self._get_node_by_abbreviated_name(field)
+            if not node or not node.has_flag('master'):
+                print('*** No such master node {}'.format(field))
+                sys.exit(1)
+            weights[node.info['name']] = float(weight)
+        useempty = opt.get('use-empty-masters')
+
+        # Assign a weight to each node, and compute the total cluster weight.
+        total_weight = 0
+        nodes_involved = 0
+        for n in self._nodes:
+            if n.has_flag('master'):
+                if not useempty and len(n.slots) == 0:
+                    n.info['w'] = weights.get(n.info['name']) or 1
+                    total_weight += n.info['w']
+                    nodes_involved += 1
+        
+        # Check cluster, only proceed if it looks sane.
+        self._check_cluster(quiet=True)
+        if len(self._errors) != 0:
+            print('*** Please fix your cluster problems before rebalancing')
+            sys.exit(1)
+        
+        # Calculate the slots balance for each node. It's the number of
+        # slots the node should lose (if positive) or gain (if negative)
+        # in order to be balanced.
+        threshold = float(opt['threshold'])
+        threshold_reached = False
+        for n in self._nodes:
+            if n.has_flag('master'):
+                if not n.info['w']:
+                    continue
+                expected = ((float(CLUSTER_HASH_SLOTS) / total_weight)
+                            * int(n.info['w']))
+                n.info['balance'] = len(n.slots) - expected
+                # Compute the percentage of difference between the
+                # expected number of slots and the real one, to see
+                # if it's over the threshold specified by the user.
+                over_threshold = False
+                if threshold > 0:
+                    if len(n.slots) > 0:
+                        err_perc = abs(100 - (100.0 * expected / len(n.slots)))
+                        if err_perc > threshold:
+                            over_threshold = True
+                    elif expected > 0:
+                        over_threshold = True
+                if over_threshold:
+                    threshold_reached = True
+
+        if not threshold_reached:
+            print('*** No rebalancing needed! '\
+                  'All nodes are within the {}% threshold.'.format(threshold))
+            return
+
+        # Only consider nodes we want to change
+        sn = [n for n in self._nodes 
+                if n.has_flag('master') and n.info['w']]
+
+        # Because of rounding, it is possible that the balance of all nodes
+        # summed does not give 0. Make sure that nodes that have to provide
+        # slots are always matched by nodes receiving slots. 
+        total_balance = sum(n.info['balance'] for n in sn)
+        while total_balance > 0:
+            for n in sn:
+                if n.info['balance'] < 0 and total_balance > 0:
+                    n.info['balance'] -= 1
+                    total_balance -= 1
+        
+        # Sort nodes by their slots balance.
+        sn = sorted(sn, key=lambda n: n.info['balance'])
+
+        print('>>> Rebalancing across {} nodes.'\
+              ' Total weight = {}'.format(nodes_involved, total_weight))
+
+        if verbose:
+            for n in sn:
+                print('{} balance is {} slots'.format(n, n.info['balance']))
+        
+        # Now we have at the start of the 'sn' array nodes that should get
+        # slots, at the end nodes that must give slots.
+        # We take two indexes, one at the start, and one at the end,
+        # incrementing or decrementing the indexes accordingly til we
+        # find nodes that need to get/provide slots.
+        dst_idx = 0
+        src_idx = len(sn) - 1
+
+        while dst_idx < src_idx:
+            dst = sn[dst_idx]
+            src = sn[src_idx]
+            numslots = min(map(abs, [dst.info['balance'], src.info['balance']]))
+
+            if numslots > 0:
+                print('Moving {} slots from {} to {}'.format(numslots, src, dst))
+
+                # Actaully move the slots.
+                reshard_table = self._compute_reshard_table([src], numslots)
+                if len(reshard_table) != numslots:
+                    print('*** Assertio failed: Reshard table != number of slots')
+                    sys.exit(1)
+                if opt.get('simulate'):
+                    print('#' * len(reshard_table))
+                else:
+                    for e in reshard_table:
+                        self._move_slot(e['source'], dst, e['slot'],
+                            quiet=True, dots=False, 
+                            update=True, pipeline=opt['pipeline'])
+                        print('#', end='')
+                print()
+
+            # Update nodes balance.
+            dst.info['balance'] += numslots
+            src.info['balance'] -= numslots
+            if dst.info['balance'] == 0:
+                dst_idx += 1
+            if src.info['balance'] == 0:
+                src_idx -= 1
+    
+
+    def call_cluster(self, addr, cmd, **kwargs):
+        if kwargs.get('password'):
+            self._password = kwargs['password']
+
+        cmd = [cmd[0].upper()] + cmd[1:]
+        # Load cluster information
+        self._load_cluster_info_from_node(addr)
+        print('>>> Calling {}'.format(' '.join(cmd)))
+        for n in self._nodes:
+            try:
+                n.r.set_response_callback('INFO', bytes)
+                res = n.r.execute_command(*cmd)
+                print(type(res))
+                print('{}: {}'.format(n, res[:10].decode()))
+            except redis.RedisError as e:
+                print('{}: {}'.format(n, res))
+
+
+if __name__ == '__main__':
+    RedisTrib().call_cluster('10.231.223.191:7000', ['INFO'], password='Redis1234')
 
 ## [DONE]
 #   - create_cluster_cmd
@@ -1301,10 +1470,10 @@ class RedisTrib:
 #   - addnode_cluster_cmd
 #   - delnode_cluster_cmd
 #   - fix_cluster_cmd
+#   - rebalance_cluster_cmd
 #   - reshard_cluster_cmd
 
 ## [TODO]
-#   - rebalance_cluster_cmd
 #   - call_cluster_cmd
 #   - import_cluster_cmd
 #   - help_cluster_cmd
