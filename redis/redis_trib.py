@@ -588,6 +588,13 @@ class RedisTrib:
                 node = random.choice(masters)
                 print('>>> Covering slot {} with {}'.format(slot, node))
                 node.r.cluster('ADDSLOTS', slot)
+            
+            # Needed check
+            # 반드시 필요한가? 
+            # fix_slots_coverage가 발생하는 경우, 손실 노드의 CLUSTER FORGET을 전제로 함
+            for m in masters:
+                m.r.cluster('BUMPEPOCH')
+
 
         # Handle case "2": keys only in one node.
         if single:
@@ -597,7 +604,12 @@ class RedisTrib:
             for slot, nodes in single.items():
                 print('>>> Covering slot {} with {}'.format(slot, nodes[0]))
                 nodes[0].r.cluster('ADDSLOTS', slot)
-        
+            
+            # Needed check
+            # 반드시 필요한가? 
+            # fix_slots_coverage가 발생하는 경우, 손실 노드의 CLUSTER FORGET을 전제로 함
+            for n in set(single.values()):
+                n.r.cluster('BUMPEPOCH')
         
         # Handle case "3": keys in multiple nodes.
         if multi:
@@ -620,6 +632,12 @@ class RedisTrib:
                     src.r.cluster('SETSLOT', slot, 'IMPORTING', target.info['name'])
                     self._move_slot(src, target, slot, dots=True, fix=True, cold=True)
                     src.r.cluster('SETSLOT', slot, 'STABLE')
+            
+            # Needed check
+            # 반드시 필요한가? 
+            # fix_slots_coverage가 발생하는 경우, 손실 노드의 CLUSTER FORGET을 전제로 함    
+            for n in set(multi.values()):
+                n.r.cluster('BUMPEPOCH')
 
 
     def _cluster_error(self, msg):
