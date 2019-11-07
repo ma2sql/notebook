@@ -1,5 +1,7 @@
 import redis
 import sys
+import time
+import click
 from collections import defaultdict
 from operator import itemgetter
 
@@ -14,6 +16,7 @@ TYPE_META = {
     'stream': ('XLEN', 5, 'entries'),
     'other': (None, 6, '?'),
 }
+
 
 def get_keys_types(keys):
     result = None
@@ -44,7 +47,6 @@ def get_keys_sizes_memory_command(keys, types, **kwargs):
     return result
 
 
-
 def scan_iter_chunk(count=None, match=None):
     keys = []
     for k in r.scan_iter(count=count, match=match):
@@ -55,7 +57,7 @@ def scan_iter_chunk(count=None, match=None):
     yield keys
 
 
-def find_big_keys(memkeys, memkeys_samples=None, interval=None):
+def find_big_keys(host, port, password, memkeys, memkeys_samples, interval):
     redis_info = r.info()
     cluster_enabled = (redis_info['cluster_enabled'] == 1 
                        if redis_info.get('cluster_enabled') 
@@ -120,9 +122,9 @@ def find_big_keys(memkeys, memkeys_samples=None, interval=None):
             if sampled % 1000000 == 0:
                 print('[{:05.2f}%] Sampled {} keys so far'.format(pct, sampled))
 
-
-    if interval and (sampled % 100 == 0):
-        time.sleep(interval/1000000.0)
+        if interval and (sampled % 100 == 0):
+            print(sampled)
+            time.sleep(interval)
 
     print('\n-------- summary -------\n')
     print('Sampled {} keys in the keyspace!'.format(sampled))
@@ -141,3 +143,36 @@ def find_big_keys(memkeys, memkeys_samples=None, interval=None):
             d['count'], key_type, d['totalsize'], unit, 
             (float(d['count']) / sampled) * 100 if sampled else 0,
             float(d['totalsize']) / d['count'] if d['count'] else 0))
+
+
+@click.command()
+@click.option('--host', '-s', type=str, default='127.0.0.1',
+              help='Server hostname (default: 127.0.0.1).')
+@click.option('--port', '-p', type=int, default=6379,
+              help='Server port (default: 6379).')
+@click.option('--password', '-a', type=str,
+              help='Password to use when connecting to the server.')
+@click.option('--memkeys', '-m', is_flag=True, default=False,
+              help='Sample Redis keys looking for keys consuming a lot of memory.'\
+                   'If not specified it works the same as --bigkeys of redis-cli.')
+@click.option('--memkeys_samples', '-ms', type=int, 
+              help='<n> Sample Redis keys looking for keys consuming a lot of memory. '\
+                   'And define number of key elements to sample')
+@click.option('--interval', type=float,
+              help='When -r is used, waits <interval> seconds per command.\n'\
+                   'It is possible to specify sub-second times like -i 0.1.)')
+def main(host, port, password, memkeys, memkeys_samples, interval):
+    '''
+    Sample Redis keys looking for keys consuming a lot of memory.
+    '''
+
+    global r
+    try:
+        r = redis.StrictRedis(host, port, password=password, decode_responses=True)
+        find_big_keys(host, port, password, memkeys, memkeys_samples, interval)
+    except KeyboardInterrupt:
+        print('Aborted!')
+            
+
+if __name__ == '__main__':
+    main()
