@@ -5,6 +5,7 @@ from collections import defaultdict
 import time
 import json
 import functools
+import math
 
 verbose = True
 
@@ -308,25 +309,26 @@ class RedisTrib:
         open_slots = []
         for n in self._nodes:
             if len(n._info['migrating']) > 0:
+                print(n, n._info['migrating'])
                 self._cluster_error(
                     '[WARNING] Node {} has slots in migrating state ({}).'.format(
-                        n, ','.join(self._info['migrating'].keys())
+                        n, ','.join(map(str, n._info['migrating'].keys()))
                     ))
-                open_slots += self._info['migrating'].keys()
+                open_slots += n._info['migrating'].keys()
             if len(n._info['importing']) > 0:
                 self._cluster_error(
                     '[WARNING] Node {} has slots in importing state ({}).'.format(
-                        n, ','.join(self._info['importing'].keys())
+                        n, ','.join(map(str, n._info['importing'].keys()))
                     ))
-                open_slots += self._info['importing'].keys()
+                open_slots += n._info['importing'].keys()
 
-            open_slots = list(set(open_slots))
-            if len(open_slots) > 0:
-                print('[WARNING] The following slots are open: {}'.format(
-                    ','.join(open_slots)))
-            if self._fix:
-                for slot in open_slots:
-                    self._fix_open_slot(slot)
+        open_slots = list(set(open_slots))
+        if len(open_slots) > 0:
+            print('[WARNING] The following slots are open: {}'.format(
+                ','.join(map(str, open_slots))))
+        if self._fix:
+            for slot in open_slots:
+                self._fix_open_slot(slot)
 
 
     def _check_slots_coverage(self):
@@ -347,7 +349,7 @@ class RedisTrib:
         for n in self._nodes:
             if n.has_flag('slave'):
                 continue
-            owners += [s for s in self.slots.keys() if s == slot]
+            owners += [s for s in n.slots.keys() if s == slot]
         return owners
 
 
@@ -366,10 +368,10 @@ class RedisTrib:
         # and the slot as migrating in the target host. Note that the order of
         # the operations is important, as otherwise a client may be redirected
         # to the target node that does not yet know it is importing this slot.
-        if not o['quiet']:
+        if not o.get('quiet'):
             print('Moving slot {} from {} to {}: '.format(slot, source, target))
         
-        if not o['cold']:
+        if not o.get('cold'):
             target.r.cluster('SETSLOT', slot, 'IMPORTING', source.info['name'])
             source.r.cluster('SETSLOT', slot, 'MIGRATING', target.info['name'])
         
@@ -400,7 +402,7 @@ class RedisTrib:
                     print('[ERR] Calling MIGRATE: {}'.format(e))
                     sys.exit(1)
 
-            if o['dots']:
+            if o.get('dots'):
                 print('.', end='', flush=True)
 
         # Set the new node as the owner of the slot in all the known nodes.
@@ -462,8 +464,8 @@ class RedisTrib:
                 print('*** Found keys about slot {} in node {}!'.format(slot, n))
                 importing.append(n)
         
-        print('Set as migrating in: {}'.format(','.join(migrating)))
-        print('Set as importing in: {}'.format(','.join(importing)))
+        print('Set as migrating in: {}'.format(','.join(map(str, migrating))))
+        print('Set as importing in: {}'.format(','.join(map(str, importing))))
 
         # If there is no slot owner, set as owner the slot with the biggest
         # number of keys, among the set of migrating / importing nodes.
@@ -1262,6 +1264,7 @@ class RedisTrib:
         reshard_table = self._compute_reshard_table(sources, numslots)
         print('  Resharding plan:')
         self._show_reshard_table(reshard_table)
+        return
         if not opt.get('yes'):
             yesno = input('Do you want to proceed with the proposed reshard plan (yes/no)? ')
             if yesno != 'yes':
@@ -1296,7 +1299,7 @@ class RedisTrib:
                 n = math.ceil(n)
             else:
                 n = math.floor(n)
-            for s in sorted(s.slots.keys())[0:n]:
+            for slot in sorted(s.slots.keys())[0:n]:
                 if len(moved) < numslots:
                     moved.append({'source': s, 'slot': slot})
 
@@ -1306,10 +1309,10 @@ class RedisTrib:
     def _show_reshard_table(self, table):
         for e in table:
             print('    Moving slot {} from {}'.format(
-                  e['slot'], e['source'].info['name']))
+                  e.get('slot'), e['source'].info['name']))
     
 
-    def rebalance_cluster(self, addr):
+    def rebalance_cluster(self, addr, **kwargs):
         opt = {'pipeline': MIGREATE_DEFAULT_PIPELINE,
              'threshold': REBALANCE_DEFAULT_THRESHOLD,
              **kwargs}
@@ -1325,14 +1328,14 @@ class RedisTrib:
         # Unused
         autoweights = opt.get('auto-weights')
         weights = {}
-        for w in opt.get('weight'):
+        for w in opt.get('weight') or []:
             field, weight = w.split('=')
             node = self._get_node_by_abbreviated_name(field)
             if not node or not node.has_flag('master'):
                 print('*** No such master node {}'.format(field))
                 sys.exit(1)
             weights[node.info['name']] = float(weight)
-        useempty = opt.get('use-empty-masters')
+        useempty = opt.get('use_empty_masters')
 
         # Assign a weight to each node, and compute the total cluster weight.
         total_weight = 0
@@ -1340,10 +1343,11 @@ class RedisTrib:
         for n in self._nodes:
             if n.has_flag('master'):
                 if not useempty and len(n.slots) == 0:
-                    n.info['w'] = weights.get(n.info['name']) or 1
-                    total_weight += n.info['w']
-                    nodes_involved += 1
-        
+                    continue
+                n.info['w'] = weights.get(n.info['name']) or 1
+                total_weight += n.info['w']
+                nodes_involved += 1
+                
         # Check cluster, only proceed if it looks sane.
         self._check_cluster(quiet=True)
         if len(self._errors) != 0:
@@ -1357,9 +1361,9 @@ class RedisTrib:
         threshold_reached = False
         for n in self._nodes:
             if n.has_flag('master'):
-                if not n.info['w']:
+                if not n.info.get('w'):
                     continue
-                expected = ((float(CLUSTER_HASH_SLOTS) / total_weight)
+                expected = int((float(CLUSTER_HASH_SLOTS) / total_weight)
                             * int(n.info['w']))
                 n.info['balance'] = len(n.slots) - expected
                 # Compute the percentage of difference between the
@@ -1375,6 +1379,10 @@ class RedisTrib:
                         over_threshold = True
                 if over_threshold:
                     threshold_reached = True
+
+
+        for n in self._nodes:
+            print(n, n.info.get('w'), n.info.get('balance'))
 
         if not threshold_reached:
             print('*** No rebalancing needed! '\
@@ -1412,7 +1420,7 @@ class RedisTrib:
         # find nodes that need to get/provide slots.
         dst_idx = 0
         src_idx = len(sn) - 1
-
+        
         while dst_idx < src_idx:
             dst = sn[dst_idx]
             src = sn[src_idx]
@@ -1433,7 +1441,7 @@ class RedisTrib:
                         self._move_slot(e['source'], dst, e['slot'],
                             quiet=True, dots=False, 
                             update=True, pipeline=opt['pipeline'])
-                        print('#', end='')
+                        print('#', end='', flush=True)
                 print()
 
             # Update nodes balance.
@@ -1491,7 +1499,7 @@ class RedisTrib:
         print('*** Importing {} keys from DB 0'.format(source.dbsize()))
 
         # Build a slot -> node map
-        slots = {s: n for n in self._nodes:
+        slots = {s: n for n in self._nodes
                           for s in n.slots.keys()}
         
         # Use SCAN to iterate over the keys, migrating to the
@@ -1508,7 +1516,7 @@ class RedisTrib:
                                0, # db
                                self._timeout, # timeout
                                copy=use_copy, # copy
-                               replace==use_replace, # replace 
+                               replace=use_replace, # replace 
                                auth=self._password # password
                                )
             except redis.RedisError as e:
@@ -1532,10 +1540,3 @@ class RedisTrib:
 #   - import_cluster_cmd
 #   - help_cluster_cmd
 #   - set_timeout_cluster_cmd
-
-if __name__ == '__main__':
-    RedisTrib().create_cluster([
-        '127.0.0.1:7001',
-        '127.0.0.1:7002',
-        '127.0.0.1:7003',
-    ])
