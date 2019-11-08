@@ -3,6 +3,8 @@ import sys
 import random
 from collections import defaultdict
 import time
+import json
+import functools
 
 verbose = True
 
@@ -39,7 +41,7 @@ class ClusterNode:
         return '{}:{}'.format(self._info['host'], self._info['port'])
 
 
-    def connect(self, abort=False, force=False):
+    def connect(self, abort=False, force=False, decode_responses=False):
         if self._r and not force:
             return
 
@@ -47,7 +49,8 @@ class ClusterNode:
             self._r = redis.StrictRedis(host=self._info['host'], 
                                   port=self._info['port'], 
                                   password=self._password,
-                                  socket_connect_timeout=60)
+                                  socket_connect_timeout=60,
+                                  decode_responses=decode_responses)
             self._r.ping()
         except redis.RedisError as e:
             print('''[ERR] Sorry, can't connect to node {}'''.format(self))
@@ -653,9 +656,9 @@ class RedisTrib:
             print(n.info_string())
 
 
-    def _load_cluster_info_from_node(self, node_addr):
+    def _load_cluster_info_from_node(self, node_addr, **kwargs):
         node = ClusterNode(node_addr, password=self._password)
-        node.connect(abort=True)
+        node.connect(abort=True, decode_responses=kwargs.get('decode_responses'))
         node.assert_cluster()
         node.load_info(getfriends=True)
         self._add_node(node)
@@ -664,7 +667,7 @@ class RedisTrib:
                 if flag in f['flags']:
                     continue
             fnode = ClusterNode(f['addr'], password=self._password)
-            fnode.connect()
+            fnode.connect(decode_responses=kwargs.get('decode_responses'))
             if not fnode.r:
                 continue
 
@@ -1448,20 +1451,71 @@ class RedisTrib:
 
         cmd = [cmd[0].upper()] + cmd[1:]
         # Load cluster information
-        self._load_cluster_info_from_node(addr)
+        self._load_cluster_info_from_node(addr, decode_responses=True)
         print('>>> Calling {}'.format(' '.join(cmd)))
+        results = {}
         for n in self._nodes:
             try:
-                n.r.set_response_callback('INFO', bytes)
+                #n.r.set_response_callback('INFO', bytes)
                 res = n.r.execute_command(*cmd)
-                print(type(res))
-                print('{}: {}'.format(n, res[:10].decode()))
+                results[str(n)] = res
             except redis.RedisError as e:
                 print('{}: {}'.format(n, res))
+        print(json.dumps(results, indent=4))
+        for k, v in results.items():
+            print(k, v)
 
 
-if __name__ == '__main__':
-    RedisTrib().call_cluster('10.231.223.191:7000', ['INFO'], password='Redis1234')
+    def import_cluster(self, addr, **kwargs):
+        if kwargs.get('password'):
+            self._password = kwargs['password']        
+
+        source_addr = kwargs.get('from')
+        print('>>> Importing data from {} to cluster {}'.format(
+            source_addr, addr))
+
+        use_copy = kwargs.get('copy') or False
+        use_replace = kwargs.get('replace') or False
+
+        # Check the existing cluster.
+        self._load_cluster_info_from_node(addr)
+        self._check_cluster()
+
+        # Connect to the source node.
+        print('>>> Connecting to the source Redis instance')
+        src_host, src_port = source_addr.split(':')
+        source = redis.StrictRedis(host=host, port=src_port, 
+                                   password=kwargs.get('from-password'))
+        if int(source.info['cluster_enabled']) == 1:
+            print('[ERR] The source node should not be a cluster node.')
+        print('*** Importing {} keys from DB 0'.format(source.dbsize()))
+
+        # Build a slot -> node map
+        slots = {s: n for n in self._nodes:
+                          for s in n.slots.keys()}
+        
+        # Use SCAN to iterate over the keys, migrating to the
+        # right node as needed.
+        for k in source.scan_iter(count=1000):
+            # Migrate keys using the MIGRATE command.
+            slot = key_to_slot(k)
+            target = slots[slot]
+            print('Migrating {} to {}'.format(k, target), end='')
+            try:
+                source.migrate(target.info['host'], 
+                               target.info['port'], 
+                               k, # key
+                               0, # db
+                               self._timeout, # timeout
+                               copy=use_copy, # copy
+                               replace==use_replace, # replace 
+                               auth=self._password # password
+                               )
+            except redis.RedisError as e:
+                print(e)
+            else:
+                print('OK')
+
 
 ## [DONE]
 #   - create_cluster_cmd
@@ -1472,9 +1526,16 @@ if __name__ == '__main__':
 #   - fix_cluster_cmd
 #   - rebalance_cluster_cmd
 #   - reshard_cluster_cmd
+#   - call_cluster_cmd
 
 ## [TODO]
-#   - call_cluster_cmd
 #   - import_cluster_cmd
 #   - help_cluster_cmd
 #   - set_timeout_cluster_cmd
+
+if __name__ == '__main__':
+    RedisTrib().create_cluster([
+        '127.0.0.1:7001',
+        '127.0.0.1:7002',
+        '127.0.0.1:7003',
+    ])
