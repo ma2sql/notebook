@@ -309,7 +309,6 @@ class RedisTrib:
         open_slots = []
         for n in self._nodes:
             if len(n._info['migrating']) > 0:
-                print(n, n._info['migrating'])
                 self._cluster_error(
                     '[WARNING] Node {} has slots in migrating state ({}).'.format(
                         n, ','.join(map(str, n._info['migrating'].keys()))
@@ -557,15 +556,15 @@ class RedisTrib:
         for n in self._nodes:
             if n.has_flag('slave'):
                 continue
-            #if len(n.r.cluster('GETKEYSINSLOT', slot, 1)) > 0:
-            #    nodes.append(n)
+            if len(n.r.cluster('GETKEYSINSLOT', slot, 1)) > 0:
+                nodes.append(n)
         return nodes
 
 
     def _fix_slots_coverage(self):
         not_covered = list(range(0, CLUSTER_HASH_SLOTS)) - self._covered_slots().keys()
         print('>>> Fixing slots coverage...')
-        print('List of not covered slots: {}'.format(','.join(map(str,not_covered))))
+        print('List of not covered slots: {}'.format(','.join(map(str, not_covered))))
 
         # For every slot, take action depending on the actual condition:
         # 1) No node has keys for this slot.
@@ -1524,6 +1523,19 @@ class RedisTrib:
             else:
                 print('OK')
 
+if __name__ == '__main__':
+    '''
+    RedisTrib().create_cluster(
+        ['192.168.56.101:7001', 
+         '192.168.56.101:7002', 
+         '192.168.56.101:7003']
+    )
+
+    RedisTrib().check_cluster('192.168.56.101:7001')
+    RedisTrib().info_cluster('192.168.56.101:7001')
+    '''
+    RedisTrib().check_cluster('192.168.56.101:7001')
+    RedisTrib().fix_cluster('192.168.56.101:7001')
 
 ## [DONE]
 #   - create_cluster_cmd
