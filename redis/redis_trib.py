@@ -348,7 +348,8 @@ class RedisTrib:
         for n in self._nodes:
             if n.has_flag('slave'):
                 continue
-            owners += [s for s in n.slots.keys() if s == slot]
+            if n.slots.get(slot):
+                owners.append(n)
         return owners
 
 
@@ -387,7 +388,8 @@ class RedisTrib:
                                  timeout=self._timeout,
                                  auth=self._password)
             except redis.RedisError as e:
-                if o.get('fix') and str(e).startswith('BUSYKEY'):
+                print(e.args)
+                if o.get('fix') and 'BUSYKEY' in str(e):
                     print('*** Target key exists. Replacing it for FIX.')
                     source.r.migrate(host=target.info['host'], 
                                      port=target.info['port'],
@@ -472,6 +474,7 @@ class RedisTrib:
             print('>>> Nobody claims ownership, selecting an owner...')
             owner = self._get_node_with_most_keys_in_slot(self._nodes, slot)
 
+            # If we still don't have an owner, we can't fix it.
             if not owner:
                 print('''[ERR] Can't select a slot owner. Impossible to fix.''')
                 sys.exit(1)
@@ -1533,6 +1536,10 @@ if __name__ == '__main__':
 
     RedisTrib().check_cluster('192.168.56.101:7001')
     RedisTrib().info_cluster('192.168.56.101:7001')
+    '''
+    '''
+    RedisTrib().check_cluster('192.168.56.101:7001')
+    RedisTrib().fix_cluster('192.168.56.101:7001')
     '''
     RedisTrib().check_cluster('192.168.56.101:7001')
     RedisTrib().fix_cluster('192.168.56.101:7001')
