@@ -96,7 +96,10 @@ def find_big_keys(host, port, password, memkeys, memkeys_samples, interval):
         }
     
     for keys in scan_iter_chunk(count=100):
-        pct = (float(sampled) / total_keys) * 100
+        try:
+            pct = (float(sampled) / total_keys) * 100
+        except ZeroDivisionError:
+            break
 
         types = get_keys_types(keys)
         sizes = get_keys_sizes(keys, types, samples=memkeys_samples)
