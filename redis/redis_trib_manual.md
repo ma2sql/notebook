@@ -1,5 +1,8 @@
 # fix
 
+## fix_open_slot
+
+
 ## fix_slots_coverage
 **fix_slots_coverage** 메서드가 실행되기 위해서는 먼저, **check_slots_coverage** 메서드로부터 실행되는 슬롯 커버리지 체크가 실패해야한다. 슬롯 커버리지란, 말 그대로 레디스 클러스터의 모든 슬롯 16384개가 각각이 하나씩의 노드에 속해야한다는 것이다. 그리고 슬롯 커러리지 체크에 실패했다는 것은 어떤 노드에도 속하지 못한 슬롯이 존재하는 상태라는 것이다.
 
@@ -8,6 +11,8 @@
 1. **none**: 키를 소유하고 있는 노드가 없는 경우
 2. **single**: 키를 소유하고 있는 노드가 하나만 있는 경우
 3. **multi**: 키를 소유하고 있는 노드가 두 개 이상인 경우
+
+*참고: 키의 존재 여부를 확인은 `CLUSTER GETKEYSINSLOT` 커맨드가 사용된다.*
 
 **not_covered**의 순회와 슬롯에 대한 분류가 끝나면, 분류별로 각각 다른 방식으로 슬롯 커버리지를 만족하도록 수정을 시도한다.
 
@@ -39,22 +44,15 @@ redis.exceptions.ResponseError: Slot 10923 is already busy
 
 
 ### 2. `single`
-이 슬롯에 대한 데이터를 하나의 노드만 소유하고 있지 않은 상태. 이 경우에는 소유한 노드가 슬롯을 소유하도록 해주면 된다.
-
-이것은 어떠한 상황에서 발생하게 될 것인가? 클러스터를 확장하는 경우, IMPORTING/MIGRATING 상태를 정리하려는 상황에서 MIGRATING 노드가 페일오버된다. slave가 마스터가 되면서 MIGRATING 상태가 해제된다. 그리고 IMPORTING 상태의 노드 역시 `CLUSTER SETSLOT` 명령을 받지 못한다면?
-IMPORTING 상태로 남이있게 될 것이다.
-
-다만.. `IMPORTING` 상태에 대해서는 **fix_open_slots** 에서 먼저 정리될 수 있을 듯 한데.. 음
+**not_covered** 슬롯에 대한 키를 하나의 노드만 가지고 있는 상태로, 이 경우에는 키를 소유하고 있는 노드로 슬롯을 할당하도록 하며, `CLUSTER ADDSLOTS` 커맨드만 사용된다.
 
 
 ### 3. `multi`
-이 슬롯에 대한 데이터를 두 개 이상의 노드가 소유하고 있는 경우라면. 더 많은 수의 키 (`CLUSTER COUNTKEYSINSLOT`) 를 보유한 노드를 주인으로 두고, 나머지 노드에서는 해당 슬롯의 데이터를 주인 노드로 옮긴다.
+**not_covered** 슬롯에 대한 키를 두 개 이상의 노드가 가지고 있는 경우라면. 더 많은 수의 키를 보유한 노드를 주인으로 선정하고, 나머지 노드로부터 해당 슬롯의 키를 전달받는다.
 
-먼저, 소스 노드(주인이 아닌 노드)에 `CLUSTER SETSLOT IMPORTING`를 실행한다. 실제로는 마이그레이션하는 소스 노드이지만, `IMPORTING`을 설정하는 이유는, 바로 이 노드로 `MIGRATE` 커맨드가 실행되어야하기 때문이다. 만약, IMPORTING 상태로 만들지 않는다면, MIGRATE 커맨드는 리다이렉션이 되어버리고 말 것이다.
+어떤 노드가 가장 많은 키를 가지고 있는지는 `CLUSTER COUNTKEYSINSLOT` 커맨드로 확인한다. 이렇게 선정이 되는 주인 노드는 **target**이 되고, 나머지 노드는 **source**가 된다. 먼저, **target**에 대해서 `CLUSTER ADDSLOTS`와 `CLUSTER SETSLOT STABLE` 명령을 실행하여 슬롯을 할당하고 상태를 정리한다. 그리고 본격적으로 **source**로부터 **target**으로 키를 옮기는 작업을 **move_slot** 메서드를 통해 진행된다. 이 때, 중요한 사전 작업으로는 **source** 노드의 슬롯에 대해 `IMPORTING` 상태로 설정하는 것인데, 만약 이러한 설정이 없는 상태에서 **source**에`MIGRATE` 커맨드가 실행되면, 리다이렉션 에러가 발생할 것이기 때문이다. 그렇기 때문에 키를 전달받는 입장이 아니더라도 `IMPORTING` 상태로 설정하는 것이다. (Set the source node in 'importing' state (even if we will actually migrate keys away) in order to avoid receiving redirections for MIGRATE.) 그리고 나서 fix, cold 옵션과 함께 **move_slot** 메서드를 실행하는데, 여기서 cold는 **move_slot**메서드 내부 에서 별도로 실행되는 `IMPORTING`/`MIGRATING` 설정을 무시하는 옵션이며, fix는 옮기려는 키가 **target**노드에 이미 존재하는 경우에는 `MIGRATE` 커맨드를 `REPLACE` 옵션과 함께 재실행되도록 해주는 옵션이다.
 
-그리고 나서, fix, cold 옵션을 부여하여 source로부터 target(주인)으로 move_slot을 실행시킨다. 여기서 cold 옵션의 효과는 reshading/rebalancing 등에서 move_slot을 사용할 때 처럼 target을 IMPORTING, source를 MIGRATING으로 두지 않기 위함이다. 이미 ADDSLOT으로 주인 노드를 할당해둔 상태이고, MIGRATING 모드는 보통 주인 노드에서 실행되는 것으로 fix하기 위한 목적과는 맞지 않기 때문이다.
-
-
+> move_slot의 fix 옵션에 대해서는 조금 의문이 든다. **source**로부터 **target**으로 키를 옮길 때, replace를 함께 사용해버리고, 만약 서로 동일한 키에 대해 다른 값이 저장되어 있다고 한다면? 어느 쪽이 맞는지 알기 어려운 상태이긴 한데, **target**을 주인 노드로 설정한 상태에서, **source**노드 기준으로 값을 덮어 쓰는 것이 과연 맞는 것일까? 물론, fix 옵션은 fix_open_slots에서도 사용되므로 그 메서드의 목적에는 부합할지도 모르겠지만 말이다.
 
 
 
