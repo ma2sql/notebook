@@ -1,6 +1,21 @@
 # fix
 
 ## fix_open_slot
+**check_open_slots** 메서드로부터 전 노드의 슬롯 정보를 조회, `IMPORTING`/`MIGRATING` 인지 조사를 하고, 둘 중 하나에라도 속하는 경우에는 **open_slots**의 리스트에 저장하고, 이는 곧 fix 대상이 된다. open된 슬롯 각각에 대해서는  **fix_open_slot** 메서드가 호출된다.
+
+**fix_open_slot** 에서는 먼저 수정이 필요한 slot을 소유하고 있는 노드 **onwers**를 확인한다. **owners**는 하나 이상일 수도 있는데, 이에 따라 open slot의 처리가 달라진다. **owners**를 확인한 다음에는 전 노드를 순회하며, 해당 slot을 `IMPORTING`/`MIGRATING` 으로 설정한 노드가 있는지에 따라 각각 분류해나간다. 이 때, `IMPORTING`/`MIGRATING` 상태는 아니지만, 해당 슬롯에 대해서 키를 가지고 있을 가능성도 있다고 보고 `CLUSTER COUNTKEYSLOT` 를 이용해서도 조사를 하며, 여기서 발견된 키는 `IMPORTING` 상태로 간주한다.
+
+1. **owner**를 결정하기
+**get_slot_owners** 메서드로 슬롯의 주인을 찾는 것에 실패했다면, owner 역할을 해야할 노드를 결정해야 한다. *아마도 이것은 `IMPORTING` 상태의 노드만 존재하는 상황일 것이다.* **owner**가 없는 상황에서는 해당 슬롯에 대해 가장 많은 키를 가진 노드가 **owner**로 선택한다 (**get_node_with_most_keys_in_slot**). **owner** 슬롯이 정해지면 `CLUSTER SETSLOT STABLE`과 `CLUSTER ADDSLOTS`를 실행하여 슬롯을 할당해준다. 그리고 `CLUSTER BUMPEPOCH`를 실행하여 epoch값을 증가시켜준다. (만약, 예전 owner 노드가 없는 상황이라면, `CLUSTER BUMPEPOCH`는 실행되지 않더라도 문제가 되지는 않는다.)
+
+ **owners** 가 하나 이상인 경우, 마찬가지로 슬롯에 대해 가장 많은 키를 가진 노드를 **owner**로 선택한다. 그리고 **owner**가 되지 못한 나머지 노드에 대해서는 `CLUSTER DELSLOT`과 `CLUSTER SETSLOT IMPORTING` 커맨드를 실행하여, `IMPORTING` 상태가 되도록 만들어준다. **owner** 노드에 대해서는 마찬가지로 `CLUSTER BUMPEPOCH`로 epoch 또한 증가시켜준다.
+
+2. **move_slot**의 실행
+**migrating** 으로 판단된 노드와 **importing**으로 판단된 노드가 각각 하나씩만 존재한다면, **migrating**에서 **importing**으로 **move_slot**을 실행하여 준다.
+
+**migrating**으로 판단된 노드가 없고, **importing**으로 판단된 노드가 하나 이상인 경우에는, **importing** 노드로부터 **ower** 노드로 **move_slot**을 진행한다. 이 때, cold 옵션을 부여하여 **move_slot**을 실행하고, 메서드 내부에서 `IMPORTING`/`MIGRATING`이 실행되지 않도록 조정한다. 마이그레이션이 완료되면 **importing** 판정 노드에 `CLUSTER SETSLOT STABLE`을 실행하여 상태를 정리하여 준다.
+
+**importing**이 없고, **migrating**은 하나만 존재, **migrating** 내에는 키가 하나도 존재하지 않을 때에는, **migrating**에 대해서 `CLUSTER SETSLOT STABLE`을 실행하여 상태를 정리하여 준다.
 
 
 ## fix_slots_coverage
