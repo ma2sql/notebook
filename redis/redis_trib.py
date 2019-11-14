@@ -472,12 +472,17 @@ class RedisTrib:
         # number of keys, among the set of migrating / importing nodes.
         if not owner:
             print('>>> Nobody claims ownership, selecting an owner...')
+            # 클러스터 내에서 이 슬롯에 대한 키를 어느 곳에서도 가지고 있지 않다면, nodes의 첫 노드가 반환된다.
             owner = self._get_node_with_most_keys_in_slot(self._nodes, slot)
 
             # If we still don't have an owner, we can't fix it.
+            # nodes가 비어있는게 아니라면, 이러한 경우는 있을 수가 없다..
             if not owner:
-                print('''[ERR] Can't select a slot owner. Impossible to fix.''')
-                sys.exit(1)
+                if len(importing) == 1:
+                    owner = importing[0]
+                else:
+                    print('''[ERR] Can't select a slot owner. Impossible to fix.''')
+                    sys.exit(1)
 
             # Use ADDSLOTS to assign the slot.
             print('*** Configuring {} as the slot owner'.format(owner))

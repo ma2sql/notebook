@@ -58,11 +58,11 @@ redis.exceptions.ResponseError: Slot 10923 is already busy
 따라서, 전체 노드에 대해 `CLUSTER FORGET` 명령으로 **fail** 상태의 노드를 삭제한 다음, 다시 한 번 수정을 시도할 필요가 있다.
 
 
-### 2. `single`
+### 2. single
 **not_covered** 슬롯에 대한 키를 하나의 노드만 가지고 있는 상태로, 이 경우에는 키를 소유하고 있는 노드로 슬롯을 할당하도록 하며, `CLUSTER ADDSLOTS` 커맨드만 사용된다.
 
 
-### 3. `multi`
+### 3. multi
 **not_covered** 슬롯에 대한 키를 두 개 이상의 노드가 가지고 있는 경우라면. 더 많은 수의 키를 보유한 노드를 주인으로 선정하고, 나머지 노드로부터 해당 슬롯의 키를 전달받는다.
 
 어떤 노드가 가장 많은 키를 가지고 있는지는 `CLUSTER COUNTKEYSINSLOT` 커맨드로 확인한다. 이렇게 선정이 되는 주인 노드는 **target**이 되고, 나머지 노드는 **source**가 된다. 먼저, **target**에 대해서 `CLUSTER ADDSLOTS`와 `CLUSTER SETSLOT STABLE` 명령을 실행하여 슬롯을 할당하고 상태를 정리한다. 그리고 본격적으로 **source**로부터 **target**으로 키를 옮기는 작업을 **move_slot** 메서드를 통해 진행된다. 이 때, 중요한 사전 작업으로는 **source** 노드의 슬롯에 대해 `IMPORTING` 상태로 설정하는 것인데, 만약 이러한 설정이 없는 상태에서 **source**에`MIGRATE` 커맨드가 실행되면, 리다이렉션 에러가 발생할 것이기 때문이다. 그렇기 때문에 키를 전달받는 입장이 아니더라도 `IMPORTING` 상태로 설정하는 것이다. (Set the source node in 'importing' state (even if we will actually migrate keys away) in order to avoid receiving redirections for MIGRATE.) 그리고 나서 fix, cold 옵션과 함께 **move_slot** 메서드를 실행하는데, 여기서 cold는 **move_slot**메서드 내부 에서 별도로 실행되는 `IMPORTING`/`MIGRATING` 설정을 무시하는 옵션이며, fix는 옮기려는 키가 **target**노드에 이미 존재하는 경우에는 `MIGRATE` 커맨드를 `REPLACE` 옵션과 함께 재실행되도록 해주는 옵션이다.
