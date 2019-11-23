@@ -15,15 +15,10 @@ MIGREATE_DEFAULT_PIPELINE = 10
 CLUSTER_HASH_SLOTS = 16384
 REBALANCE_DEFAULT_THRESHOLD = 2
 
+
 class ClusterNode:
     def __init__(self, addr, password=None):
-        s = addr.split('@')[0].split(':')
-        if len(s) < 2:
-           print('Invalid IP or Port (given as {}) - use IP:Port format'.format(addr))
-           sys.exit(1)
-
-        port = s[-1] # removes port from split array
-        ip = ':'.join(s[:-1]) # if s.length > 1 here, it's IPv6, so restore address
+        ip, port = get_ip_port_by_addr(addr)
 
         self._r = None
         self._password = password
@@ -328,6 +323,11 @@ class RedisTrib:
         if self._fix:
             for slot in open_slots:
                 self._fix_open_slot(slot)
+            addr = '{}:{}'.format(
+                self._nodes[0].info['host'],
+                self._nodes[0].info['port']
+            )
+            self._load_cluster_info_from_node(addr)
 
 
     def _check_slots_coverage(self):
@@ -349,6 +349,8 @@ class RedisTrib:
             if n.has_flag('slave'):
                 continue
             if n.slots.get(slot):
+                owners.append(n)
+            elif n.r.cluster('COUNTKEYSINSLOT', slot) > 0:
                 owners.append(n)
         return owners
 
@@ -434,7 +436,7 @@ class RedisTrib:
             if numkeys > best_numkeys or not best:
                 best = n
                 best_numkeys = numkeys
-        return best
+        return best, best_numkeys
 
 
     # Slot 'slot' was found to be in importing or migrating state in one or
@@ -456,7 +458,6 @@ class RedisTrib:
         for n in self._nodes:
             if n.has_flag('slave'):
                 continue
-
             if n.info['migrating'].get(slot):
                 migrating.append(n)
             elif n.info['importing'].get(slot):
@@ -471,33 +472,43 @@ class RedisTrib:
         # If there is no slot owner, set as owner the slot with the biggest
         # number of keys, among the set of migrating / importing nodes.
         if not owner:
+            # owner를 발견하지 못했다는 것은, 
+            # 적어도 migrating 상태의 슬롯도 없었다는 것을 의미한다.
+            # 또한, COUNTKEYSINSLOT으로 키를 가지고 있는 슬롯 또한 없었던 것이다.
+            # 정말 슬롯을 잃었거나, 또는 IMPORTING 상태의 슬롯이 존재, 키는 없는 상태
+            # 그리고, MIGRATING 상태의 슬롯이 정리된 상태?
+
             print('>>> Nobody claims ownership, selecting an owner...')
-            # 클러스터 내에서 이 슬롯에 대한 키를 어느 곳에서도 가지고 있지 않다면, nodes의 첫 노드가 반환된다.
-            owner = self._get_node_with_most_keys_in_slot(self._nodes, slot)
+            # 클러스터 내에서 이 슬롯에 대한 키를 어느 곳에서도 가지고 있지 않다면, 
+            # nodes의 첫 노드가 반환된다.
+            # among the set of migrating / importing nodes?
+            owner, numkeys = self._get_node_with_most_keys_in_slot(self._nodes, slot)
 
             # If we still don't have an owner, we can't fix it.
             # nodes가 비어있는게 아니라면, 이러한 경우는 있을 수가 없다..
             if not owner:
-                if len(importing) == 1:
-                    owner = importing[0]
-                else:
-                    print('''[ERR] Can't select a slot owner. Impossible to fix.''')
-                    sys.exit(1)
+                print('''[ERR] Can't select a slot owner. Impossible to fix.''')
+                sys.exit(1)
+            
+            # 그 어느 노드에서도 키를 가진 노드가 없었었다는 것을 의미한다.
+            # IMPORTING은 하나 이상 존재하고 있을 수 있다.
+            if numkeys == 0:
+                owner = None
+            else:
+                # Use ADDSLOTS to assign the slot.
+                print('*** Configuring {} as the slot owner'.format(owner))
+                owner.r.cluster('SETSLOT', slot, 'STABLE')
+                owner.r.cluster('ADDSLOTS', slot)
 
-            # Use ADDSLOTS to assign the slot.
-            print('*** Configuring {} as the slot owner'.format(owner))
-            owner.r.cluster('SETSLOT', slot, 'STABLE')
-            owner.r.cluster('ADDSLOTS', slot)
+                # Make sure this information will propagate. Not strictly needed
+                # since there is no past owner, so all the other nodes will accept
+                # whatever epoch this node will claim the slot with.
+                owner.r.cluster('BUMPEPOCH')
 
-            # Make sure this information will propagate. Not strictly needed
-            # since there is no past owner, so all the other nodes will accept
-            # whatever epoch this node will claim the slot with.
-            owner.r.cluster('BUMPEPOCH')
-
-            # Remove the owner from the list of migrating/importing
-            # nodes.
-            migrating.remove(owner)
-            importing.remove(owner)
+                # Remove the owner from the list of migrating/importing
+                # nodes.
+                migrating.remove(owner)
+                importing.remove(owner)
 
         # If there are multiple owners of the slot, we need to fix it
         # so that a single node is the owner and all the other nodes
@@ -527,7 +538,7 @@ class RedisTrib:
         # they probably got keys about the slot after a restart so opened
         # the slot. In this case we just move all the keys to the owner
         # according to the configuration.
-        elif len(migrating) == 0 and len(importing) > 0:
+        elif len(migrating) == 0 and len(importing) > 0 and owner:
             print('>>> Moving all the {} slot keys to its owner {}'.format(slot, owner))
             for node in importing:
                 if node == owner:
@@ -543,6 +554,24 @@ class RedisTrib:
                 and len(migrating) == 1
                 and len(migrating[0].r.cluster('GETKEYSINSLOT', slot, 10)) == 0):
             migrating[0].r.cluster('SETSLOT', slot, 'STABLE') 
+        
+
+
+
+        # Case 5: 빈 클러스터에 대해 리샤딩을 실행할 때, move_slot의 마지막 부분에서
+        # CLUSTER SETSLOT NODE 명령을 전 노드로 실행할 때, IMPORTING 노드에 대해서
+        # 실패가 발생한다면, 그 슬롯에 소유자는 없어져버리는 상태가 된다.
+        # migrating은 해제될 것이다. 나머지 노드는 슬롯의 소유자를 IMPORTING 노드로 변경한다.
+        # 이런 경우에는 단순히 IMPORTING 슬롯을 owner로 만들어주면 된다.
+        # importing이 2개 이상이면, 첫 노드를 owner로 두고 나머지 노드에 대해서는 STABLE을 실행
+        elif len(migrating) == 0 and len(importing) > 0 and not owner:
+            owner = importing.pop(0)
+            print('>>> Setting {} as the slot {} owner'.format(owner, slot))
+            owner.r.cluster('SETSLOT', slot, 'NODE', owner.info['name'])
+            for node in importing:
+                print('>>> Setting {} as STABLE in {}'.format(slot, node))
+                node.r.cluster('SETSLOT', slot, 'STABLE')
+
         else:
             print('''[ERR] Sorry, Redis-trib can't fix '''\
                   '''this slot yet (work in progress). '''\
@@ -878,8 +907,8 @@ class RedisTrib:
                                   'role too ({} remaining)'.format(nodes_count))
                     
                     # Return the first node not matching our current master
-                    idx = node = next([i, n] for i, n in enumerate(interleaved) 
-                                             if n.info['host'] != m.info['host'])
+                    node = next([i, n] for i, n in enumerate(interleaved) 
+                                if n.info['host'] != m.info['host'])
 
                     # If we found a node, use it as a best-first match.
                     # Otherwise, we didn't find a node on a different IP, so we
