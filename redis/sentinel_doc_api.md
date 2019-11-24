@@ -1,14 +1,8 @@
 ## Sentinel API
+Sentinel은 자신의 상태를 확인하고, 모니터링하는 마스터나 슬레이브의 헬스를 체크하고, 알림이나 여러 변경 이벤틀 수신하기 위한 구독이나, 런타임 중에 구성을 변경하기 위한 여러가지 API를 제공한다.
+기본적으로 센티널은 TCP port 26379에서 실행된다(6379는 레디시의 기본 포트). Sentinel은 레디스 프로토콜을 통해서 커맨드를 받아들이기 때문에, redis-cli 또는 다른 종류의 레디스 클라이언트를 이용하여 센티널과 통신할 수 있다.
 
-Sentinel provides an API in order to inspect its state, check the health of monitored masters and replicas, subscribe in order to receive specific notifications, and change the Sentinel configuration at run time.
-By default Sentinel runs using TCP port 26379 (note that 6379 is the normal Redis port). Sentinels accept commands using the Redis protocol, so you can use redis-cli or any other unmodified Redis client in order to talk with Sentinel.
-
-Sentinel은 몇몇 API를 제공한다. 상태를 확인하고, 모니터링하는 마스터나 슬레이브의 헬스를 체크하고, 알림이나 여러 변경 이벤틀 수신하고 그 구성을 런타임에 변경하기 위해서 구독도 한다. 
-기본적으로 센티널은 TCP port 26379에서 실행된다, (6379는 레디시의 기본 포트이다.) Sentinel은 레디스 프로토콜을 통해서 커맨드를 받아들인다.  그래서 센티널과 통신하기 위해서 redis-cli 또는 다른 레디스 클라이언트를 이용할 수 있다.
-
-It is possible to directly query a Sentinel to check what is the state of the monitored Redis instances from its point of view, to see what other Sentinels it knows, and so forth. Alternatively, using Pub/Sub, it is possible to receive push style notifications from Sentinels, every time some event happens, like a failover, or an instance entering an error condition, and so forth.
-
-직접 센티널로 명령을 날려볼 수도 있다. 지금 모니터되고 있는 레디스 인스턴스가 어떠한 상태인지. 그리고 다른 센티널은 어떠한 정보를 가지고 있는지 등등. 아니면 Pub/Sub를 티용해서 푸시 형식의 노티를 센티널로부터 받는 것 또한 가능하다. 어떠한 이벤트가 발생할 때마다, 예를 들면 페일오버나 다른 인스턴스가 에러 또는 기타 등등의 상태로 접어든 것을.
+지금 모니터되고 있는 레디스 인스턴스가 어떠한 상태인지, 센티널 자신이 판단하는 정보, 그리고 또 다른 센티널들은 어떻게 판단하고 있는지 등등을 알아보기 위해 직접 센티널로 명령을 실행해볼 수도 있다. 아니면, `Pub/Sub`를 사용해서, 페일오버나 인스턴스에 에러가 발생하는 등등 매 이벤트가 발생할 때마다, 푸시 형태의 알림을 센티널로부터 받는 것 또한 가능하다.
 
 ### Sentinel commands
 다음은 일반적으로 사용되는 센티널 관련 커맨드의 목록이다. 센티널의 구성 정보를 변경하기 위한 커맨드는 포함되어 있지 않은데, 이것은 다음 단락에서 살펴볼 것이다.
@@ -111,43 +105,50 @@ SENTINEL SET objects-cache-master quorum 5
 - **-tilt** *Tilt* 모드가 해제되었다.
 
 ### Handling of -BUSY state
-The -BUSY error is returned by a Redis instance when a Lua script is running for more time than the configured Lua script time limit. When this happens before triggering a fail over Redis Sentinel will try to send a SCRIPT KILL command, that will only succeed if the script was read-only.
-If the instance is still in an error condition after this try, it will eventually be failed over.
+루아(Lua) 스크립트가 설정된 타임아웃보다 더 오랜 시간동안 실행되고 있을 때, 레디스 인스턴스로부터 `-BUSY` 에러가 반환된다. 페일오버가 발생하기 전에 이것이 발생하면, 센티널은 `SCRIPT KILL` 커맨드를 보낼 것이다. 그리고 이 커맨드는 스크립트가 오직 *read-only*인 경우에만 성공할 것이다.
+
+만얀 이 커맨드 실행 이후에도 인스턴스가 여전히 에러를 발생하고 있다면, 결국 페일오버가 발생하게 될 것이다.
 
 ### Replicas priority
-Redis instances have a configuration parameter called replica-priority. This information is exposed by Redis replica instances in their INFO output, and Sentinel uses it in order to pick a replica among the ones that can be used in order to failover a master:
-If the replica priority is set to 0, the replica is never promoted to master.
-Replicas with a lower priority number are preferred by Sentinel.
-For example if there is a replica S1 in the same data center of the current master, and another replica S2 in another data center, it is possible to set S1 with a priority of 10 and S2 with a priority of 100, so that if the master fails and both S1 and S2 are available, S1 will be preferred.
-For more information about the way replicas are selected, please check the replica selection and priority section of this documentation.
+레디스 인스턴스는 *replica-priority*라는 설정 변수를 가지고 있다. 이 정보는 레디스 리플리카 인스턴스의 `INFO` 커맨드의 출력 값으로 노출되며, 센티널은 마스터로 페일오버 시킬 리플리카를 선택하기 위해 이 정보를 사용할 수 있다.
+
+1. 만약 *replica-priority*를 0으로 설정하면, 이 리플리카는 절대 마스터로 승격될 수 없다.
+2. 더 작은 *replica-priority* 값을 가진 리플리카들이 센티널에 의해 선택되어질 가능성이 높다.
+
+예를 들어, 현재의 마스터와 동일한 데이터 센터내에 위치하는 리플리카 S1이 있고, 또 다른 데이터 센터에 위치하는 리플리카 S2가 있다. S1의 priority는 10, 그리고 S2는 priority가 100이라고 할 때, 만약 마스터에서 페일이 발생하고 S1, S2 둘 다 사용 가능한 상황이라면 S1이 선택될 것이다.
+
+리플리카가 선택되는 방법에 대한 더 많은 정보는 이 문서의 *replica selection and priority* 섹션을 참고할 것.
 
 ### Sentinel and Redis authentication
-When the master is configured to require a password from clients, as a security measure, replicas need to also be aware of this password in order to authenticate with the master and create the master-replica connection used for the asynchronous replication protocol.
+보안 조치로써, 마스터가 클라이언트에게 패스워드를 요구하도록 구성되었다면, 리플리카 역시 마스터와의 인증과 비동기 리플리케이션 프로토콜에 사용되는 *master-replica* 커넥션을 생성하기 위해서, 이 패스워드가 무엇인지 알아야 할 필요가 있다.
 
-This is achieved using the following configuration directives:
-- requirepass in the master, in order to set the authentication password, and to make sure the instance will not process requests for non authenticated clients.
-- masterauth in the replicas in order for the replicas to authenticate with the master in order to correctly replicate data from it.
+이것은 다음의 구성 지시로 달성될 수 있다.
+- **requirepass** 마스터에서 패스워드를 설정하여, 인증되지 않은 클라이언트로부터의 요청을 처리하지 않는 것을 확실히 하기 위한 옵션
+- **masterauth** 리플리카가 마스터의 데이터를 문제없이 리플리케이션 하기 위해, 마스터와의 인증에 필요한 패스워드
 
-When Sentinel is used, there is not a single master, since after a failover replicas may play the role of masters, and old masters can be reconfigured in order to act as replicas, so what you want to do is to set the above directives in all your instances, both masters and replicas.
-This is also usually a sane setup since you don't want to protect data only in the master, having the same data accessible in the replicas.
-However, in the uncommon case where you need a replica that is accessible without authentication, you can still do it by setting up a replica priority of zero, to prevent this replica from being promoted to master, and configuring in this replica only the masterauth directive, without using the requirepass directive, so that data will be readable by unauthenticated clients.
-In order for sentinels to connect to Redis server instances when they are configured with requirepass, the Sentinel configuration must include the sentinel auth-pass directive, in the format:
+만약 센티널이 사용되고, 단일 마스터만 있는 것이 아니라면, 페일오버 후에 리플리카는 마스터의 롤을 수행할 것이고, 오래된 마스터는 새로운 마스터의 리플리카로 재구성될 수 있다. 그렇기 때문에 마스터들과 리플리카들 모두에 대해서 위의 지시들을 설정할 필요가 있다.
+
+동일한 데이터에 접근이 가능한 리플리카들을 가진 특정 마스터의 데이터에 대해서만 보호해야하는 것이 아니라면, 이것은 보통 합리적이다.  
+그러나 인증없이도 접근이 필요한 리플리카가 필요한 경우처럼 일반적이지 않은 경우가 있을 수 있는데, 이러한 경우에는 *replica-priority*를 0으로 설정해서 이 리플리카가 마스터가 되는 것을 막고, 이 리플리카에 대해서는 **requirepass**없이, 오직 **masterauth** 지시만 설정해서, 인증없는 클라이언트가 데이터를 읽을 수 있도록 하게 할 수 있다.
+
+센티널들이 **requirepass**가 설정된 레디스 서버 인스턴스로 연결하기 위해서, 센티널은 아래와 같은 포맷으로 `sentinel auth-pass` 지시를 반드시 구성에 포함시켜야 한다.
 ```
 sentinel auth-pass <master-group-name> <pass>
 ```
 
 ### Configuring Sentinel instances with authentication
-You can also configure the Sentinel instance itself in order to require client authentication via the AUTH command, however this feature is only available starting with Redis 5.0.1.
-In order to do so, just add the following configuration directive to all your Sentinel instances:
+센티널 인스턴스에도 `AUTH` 커맨드로 통해 클라이언트에게 인증을 요구하도록 패스워드를 설정하는 것이 가능하다. *다만 이 기능은 오직 5.0.1 버전부터 사용이 가능하다.*
+그렇게 하기 위해서는 다음과 같은 구성 지시를 모든 센티널 인스턴스에 추가하면 된다:
 ```
 requirepass "your_password_here"
 ```
-When configured this way, Sentinels will do two things:
-1. A password will be required from clients in order to send commands to Sentinels. This is obvious since this is how such configuration directive works in Redis in general.
-2. Moreover the same password configured to access the local Sentinel, will be used by this Sentinel instance in order to authenticate to all the other Sentinel instances it connects to.
+이렇게 설정했을 때, 센티널은 다음의 두 가지 작업을 수행한다.
+1. 센티널로 명령을 보내려는 클라이언트로부터 패스워드를 요구한다. 이것은 일반적으로 레디스에서 구성 지시가 동작하는 방식이므로 분명하다.
+2. 또한, 로컬 센티널에 접근하기 위해 설정되는 동일한 패스워드는 다른 센티널들로 접근하기 위해서도 사용될 것이다.
 
-This means that you will have to configure the same requirepass password in all the Sentinel instances. This way every Sentinel can talk with every other Sentinel without any need to configure for each Sentinel the password to access all the other Sentinels, that would be very impractical.
-Before using this configuration make sure your client library is able to send the AUTH command to Sentinel instances.
+이것은 **모든 센티널에 동일한 requirepass를 설정해야한다는 것을 의미**한다. 이러한 방법으로 모든 센티널은 다른 센티널들과 별도의 설정없이, 각각에 지정된 센티널 패스워드를 통해서 다른 센티널로 접근할 수가 있는데, 이것은 실현되기 매우 어렵다.(?)
+
+이 설정을 사용하기에 앞서, 현재 사용하고 있는 클라이언트 라이브러리가 센티널 인스턴스에 대해 `AUTH` 커맨드를 사용할 수 있는지 확인해야 한다.
 
 ### Sentinel clients implementation
-Sentinel requires explicit client support, unless the system is configured to execute a script that performs a transparent redirection of all the requests to the new master instance (virtual IP or other similar systems). The topic of client libraries implementation is covered in the document Sentinel clients guidelines.
+모든 요청이 새로운 마스터를 향하도록 하는 (VIP 또는 이와 유사한) 시스템이 별도로 구성되어 있지 않는 한, 명시적인 클라이언트의 지원이 필요하다. 클라이언트 라이브러리의 구현에 관련한 주제에 대해서는 [Sentinel clients guidelines](https://redis.io/topics/sentinel-clients) 문서에서 다룬다.
