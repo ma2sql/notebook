@@ -1,3 +1,9 @@
+## Install
+```
+pip install -U flask
+pip install -U Flask-SQLAlchemy
+```
+
 ```python
 from flask import Flask, jsonify
 import celery
