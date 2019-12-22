@@ -35,6 +35,18 @@ SYN_RECEIVED 상태의 소켓(즉, connection incompleted)을 위한 queue
 각 네트워크 장치 별로 커널이 처리하도록 쌓아두는 queue의 크기
 
 ## Transparent Huge Pages (THP)
+jmelloc의 영향일까?
+forking할 때, 부모 프로세스와 공유하는 메모리 영역이 Huge Page로 전환된다.
+https://redis.io/topics/latency#latency-induced-by-transparent-huge-pages
+https://blog.digitalocean.com/transparent-huge-pages-and-alternative-memory-allocators/
+https://cachecloud.github.io/2017/02/16/Redis%E7%9A%84Linux%E7%B3%BB%E7%BB%9F%E4%BC%98%E5%8C%96/#chapter3
+https://gist.github.com/shino/5d9aac68e7ebf03d4962a4c07c503f7d
+http://antirez.com/news/84
+https://github.com/jemalloc/jemalloc/issues/243
+https://jemalloc-discuss.canonware.narkive.com/iDzJEOI8/huge-page-support-would-be-useful-in-jemalloc
+https://discuss.aerospike.com/t/disabling-transparent-huge-pages-thp-for-aerospike/5233
+https://news.ycombinator.com/item?id=8551756
+
 
 # Reference
 - https://redis.io/topics/admin
@@ -42,3 +54,11 @@ SYN_RECEIVED 상태의 소켓(즉, connection incompleted)을 위한 queue
 - http://www.cubrid.com/faq/3794713
 - https://meetup.toast.com/posts/54
 - https://brunch.co.kr/@alden/14
+
+
+## command
+
+```
+ps -C redis-server -o COLUMNS
+hexdump -C dump.rdb | head -n1
+```
