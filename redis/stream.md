@@ -75,14 +75,230 @@ tags: [redis, stream]
 > XREAD BLOCK 0 STREAMS mystream $
 ```
 
-Note that in the example above, other than removing **COUNT**, I specified the new **BLOCK** option with a timeout of 0 milliseconds (that means to never timeout). Moreover, instead of passing a normal ID for the stream `mystream` I passed the special ID `$`. This special ID means that **XREAD** should use as last ID the maximum ID already stored in the stream `mystream`, so that we will receive only *new* messages, starting from the time we started listening. This is similar to the `tail -f` Unix command in some way.
+위의 예에서, **COUNT**를 제외하는 것 외에도 **BLOCK** 옵션을 타임아웃 0(절대 타임아웃이 되지 않는)과 함께 지정했다. `mystream` 에 대해 일반적인 ID를 전달하는 대신, 특별한 ID인 `$`를 전달했다. 이것은 **XREAD**가 마지막 ID로 `mystream`에 저장되어 있는 값중 가장 큰 ID값을 사용한다는 것을 의미한다. 그리하여 리스닝을 시작하는 시점에서부터 오직 새로운 메시지만 받게 된다. 이것은 유닉스 커맨드인 `tail -f`와 어떤면에서는 비슷한 방식이다.
 
-Note that when the **BLOCK** option is used, we do not have to use the special ID `$`. We can use any valid ID. If the command is able to serve our request immediately without blocking, it will do so, otherwise it will block. Normally if we want to consume the stream starting from new entries, we start with the ID `$`, and after that we continue using the ID of the last message received to make the next call, and so forth.
+**BLOCK** 옵션을 사용할 때, 반드시 `$`를 지정할 필요는 없고, 다른 유효한 ID를 지정할 수도 있다. 만약 커맨드가 사용자의 요청을 블로킹 없이 처리할 수가 있다면 그렇게 할 것이고, 아니면 블로킹을 하게 될 것이다. 일반적으로 우리가 스트림을 새로운 엔트리로부터 스트림을 소비하려고 할 때, ID를 `$`로 지정하여 시작하고, 그리고 나서 마지막으로 받은 메시지의 ID를 이용해서 계속해서 다음 요청 등을 실행할 수 있다.
 
-The blocking form of **XREAD** is also able to listen to multiple Streams, just by specifying multiple key names. If the request can be served synchronously because there is at least one stream with elements greater than the corresponding ID we specified, it returns with the results. Otherwise, the command will block and will return the items of the first stream getting new data (according to the specified ID).
+**XREAD**의 블로킹 폼은 단지 키를 여럿 지정함으로써, 여러 스트림으로부터 읽어들이는 것 또한 가능하다. 지정한 ID보다 큰 엘레먼트를 가진 스트림이 적어도 하나가 있어, 요청을 동기식으로 처리할 수 있다면, 결과와 함께 반환될 것이다. 그렇지 않으면, 커맨드는 블로킹될 것이고, (지정된 ID에 따라서) 새로운 데이터를 얻은 첫 스트림의 아이템을 반환할 것이다. 
 
-Similarly to blocking list operations, blocking stream reads are *fair* from the point of view of clients waiting for data, since the semantics is FIFO style. The first client that blocked for a given stream is the first that will be unblocked as new items are available.
+리스트의 블로킹 오퍼레이션과 마찬가지로, 의미론적으로 FIFO 스타일이기 때문에, 블로킹 스트림은 읽기는 데이터를 기다리는 클라이언트의 관점에서는 공정하다. 주어진 스트림에 대해 블록된 첫 클라이언트는 새로운 아이템이 사용 가능할 때 차단이 해제되는 첫 번째 클라이언트가 된다.
 
 **XREAD** has no other options than **COUNT** and **BLOCK**, so it's a pretty basic command with a specific purpose to attach consumers to one or multiple streams. More powerful features to consume streams are available using the consumer groups API, however reading via consumer groups is implemented by a different command called **XREADGROUP**, covered in the next section of this guide.
 
+**XREAD**에는 **COUNT**와 **BLOCK**외의 다른 옵션은 없고, 컨슈머를 하나 또는 그 이상의 스트림으로 연결하기 위한 특정한 목적을 가진 매우 기본적인 커맨드다. 스트림을 소비하기 위한 좀 더 강력한 기능은 컨슈머 그룹 API (Consumer Groups API)를 사용함으로써 가능해지는데, 컨슈머 그룹을 통한 읽기는 **XREADGROUP**이라는 또 다른 커맨드에 의해 실현될 수 있다. 이것에 대한 가이드는 다음 섹션에서 다룬다.
+
+
 ## Consumer groups
+
+지금 하고 있는 일이 서로 다른 클라이언트로부터 동일한 스트림을 소비하는 것일때, 그러면 **XREAD** N 클라인트로 팬아웃(fan-out)하는 방법을 이미 제공하고 있고, 읽기 확장성을 제공하기 위해 잠재적으로는 슬레이브를 이용할 수도 있다. 하지만 특정한 상황에서 우리가 원하는 것은 다수의 클라이언트에게 동일한 스트림의 메시지를 제공하는 것이 아니라, 동일한 스트림으로부터 메세지의 **각각 다른 서브셋**을 다수의 클라이언트에게 제공하는 것이다. 이것이 유용한 분명한 경우는 메시지의 처리가 느린 경우이다. 스트림의 각각 다른 부분을 전달받을 수 있는 워커를 N개 가질 수 있다는 것은, 좀 더 많은 일을 할 수 있도록 준비가 된 워커로 메시지를 라우팅함으로써, 메시지의 처리를 확장할 수 있도록 해준다.
+
+In practical terms, if we imagine having three consumers C1, C2, C3, and a stream that contains the messages 1, 2, 3, 4, 5, 6, 7 then what we want is to serve the messages like in the following diagram:
+
+```
+1 -> C1
+2 -> C2
+3 -> C3
+4 -> C1
+5 -> C2
+6 -> C3
+7 -> C1
+```
+
+In order to obtain this effect, Redis uses a concept called *consumer groups*. It is very important to understand that Redis consumer groups have nothing to do from the point of view of the implementation with Kafka (TM) consumer groups, but they are only similar from the point of view of the concept they implement, so I decided to do not change terminology compared to the software product that initially popularized such idea.
+
+A consumer group is like a *pseudo consumer* that gets data from a stream, and actually serves multiple consumers, providing certain guarantees:
+
+1. Each message is served to a different consumer so that it is not possible that the same message is delivered to multiple consumers.
+2. Consumers are identified, within a consumer group, by a name, which is a case-sensitive string that the clients implementing consumers must choose. This means that even after a disconnect, the stream consumer group retains all the state, since the client will claim again to be the same consumer. However, this also means that it is up to the client to provide a unique identifier.
+3. Each consumer group has the concept of the *first ID never consumed* so that, when a consumer asks for new messages, it can provide just messages that were never delivered previously.
+4. Consuming a message however requires explicit acknowledge using a specific command, to say: this message was correctly processed, so can be evicted from the consumer group.
+5. A consumer group tracks all the messages that are currently pending, that is, messages that were delivered to some consumer of the consumer group, but are yet to be acknowledged as processed. Thanks to this feature, when accessing the history of messages of a stream, each consumer *will only see messages that were delivered to it*.
+
+In some way a consumer group can be imagined as some *amount of state* about a stream:
+
+```
++----------------------------------------+
+| consumer_group_name: mygroup           |
+| consumer_group_stream: somekey         |
+| last_delivered_id: 1292309234234-92    |
+|                                        |
+| consumers:                             |
+|    "consumer-1" with pending messages  |
+|       1292309234234-4                  |
+|       1292309234232-8                  |
+|    "consumer-42" with pending messages |
+|       ... (and so forth)               |
++----------------------------------------+
+```
+
+If you see this from this point of view, it is very simple to understand what a consumer group can do, how it is able to just provide consumers with their history of pending messages, and how consumers asking for new messages will just be served with message IDs greater than `last_delivered_id`. At the same time, if you look at the consumer group as an auxiliary data structure for Redis streams, it is obvious that a single stream can have multiple consumer groups, that have a different set of consumers. Actually, it is even possible for the same stream to have clients reading without consumer groups via **XREAD**, and clients reading via **XREADGROUP** in different consumer groups.
+
+Now it's time to zoom in to see the fundamental consumer group commands, that are the following:
+
+* **XGROUP** is used in order to create, destroy and manage consumer groups.
+* **XREADGROUP** is used to read from a stream via a consumer group.
+* **XACK** is the command that allows a consumer to mark a pending message as correctly processed.
+
+## Creating a consumer group
+
+Assuming I have a key `mystream` of type stream already existing, in order to create a consumer group I need to do just the following:
+
+```
+> XGROUP CREATE mystream mygroup $
+OK
+```
+
+As you can see in the command above when creating the consumer group we have to specify an ID, which in the example is just `$`. This is needed because the consumer group, among the other states, must have an idea about what message to serve next at the first consumer connecting, that is, what is the current *last message ID* when the group was just created? If we provide `$` as we did, then only new messages arriving in the stream from now on will be provided to the consumers in the group. If we specify `0` instead the consumer group will consume *all* the messages in the stream history to start with. Of course, you can specify any other valid ID. What you know is that the consumer group will start delivering messages that are greater than the ID you specify. Because `$` means the current greatest ID in the stream, specifying `$` will have the effect of consuming only new messages.
+
+`XGROUP CREATE` also supports creating the stream automatically, if it doesn't exist, using the optional `MKSTREAM` subcommand as the last argument:
+
+```
+> XGROUP CREATE newstream mygroup $ MKSTREAM
+OK
+```
+
+Now that the consumer group is created we can immediately start trying to read messages via the consumer group, by using the **XREADGROUP** command. We'll read from the consumers, that we will call Alice and Bob, to see how the system will return different messages to Alice and Bob.
+
+**XREADGROUP** is very similar to **XREAD** and provides the same **BLOCK** option, otherwise it is a synchronous command. However there is a *mandatory* option that must be always specified, which is **GROUP** and has two arguments: the name of the consumer group, and the name of the consumer that is attempting to read. The option **COUNT** is also supported and is identical to the one in **XREAD**.
+
+Before reading from the stream, let's put some messages inside:
+
+```
+> XADD mystream * message apple
+1526569495631-0
+> XADD mystream * message orange
+1526569498055-0
+> XADD mystream * message strawberry
+1526569506935-0
+> XADD mystream * message apricot
+1526569535168-0
+> XADD mystream * message banana
+1526569544280-0
+```
+
+Note: *here message is the field name, and the fruit is the associated value, remember that stream items are small dictionaries.*
+
+It is time to try reading something using the consumer group:
+
+```
+> XREADGROUP GROUP mygroup Alice COUNT 1 STREAMS mystream >
+1) 1) "mystream"
+   2) 1) 1) 1526569495631-0
+         2) 1) "message"
+            2) "apple"
+```
+
+**XREADGROUP** replies are just like **XREAD** replies. Note however the `GROUP <group-name> <consumer-name>` provided above, it states that I want to read from the stream using the consumer group `mygroup` and I'm the consumer `Alice`. Every time a consumer performs an operation with a consumer group, it must specify its name uniquely identifying this consumer inside the group.
+
+There is another very important detail in the command line above, after the mandatory **STREAMS** option the ID requested for the key `mystream` is the special ID `>`. This special ID is only valid in the context of consumer groups, and it means: **messages never delivered to other consumers so far**.
+
+This is almost always what you want, however it is also possible to specify a real ID, such as `0` or any other valid ID, in this case however what happens is that we request to **XREADGROUP** to just provide us with the **history of pending messages**, and in such case, will never see new messages in the group. So basically **XREADGROUP** has the following behavior based on the ID we specify:
+
+* If the ID is the special ID `>` then the command will return only new messages never delivered to other consumers so far, and as a side effect, will update the consumer group *last ID*.
+* If the ID is any other valid numerical ID, then the command will let us access our *history of pending messages*. That is, the set of messages that were delivered to this specified consumer (identified by the provided name), and never acknowledged so far with **XACK**.
+
+We can test this behavior immediately specifying an ID of 0, without any **COUNT** option: we'll just see the only pending message, that is, the one about apples:
+
+```
+> XREADGROUP GROUP mygroup Alice STREAMS mystream 0
+1) 1) "mystream"
+   2) 1) 1) 1526569495631-0
+         2) 1) "message"
+            2) "apple"
+```
+
+However, if we acknowledge the message as processed, it will no longer be part of the pending messages history, so the system will no longer report anything:
+
+```
+> XACK mystream mygroup 1526569495631-0
+(integer) 1
+> XREADGROUP GROUP mygroup Alice STREAMS mystream 0
+1) 1) "mystream"
+   2) (empty list or set)
+```
+
+Don't worry if you yet don't know how **XACK** works, the concept is just that processed messages are no longer part of the history that we can access.
+
+Now it's the turn of Bob to read something:
+
+```
+> XREADGROUP GROUP mygroup Bob COUNT 2 STREAMS mystream >
+1) 1) "mystream"
+   2) 1) 1) 1526569498055-0
+         2) 1) "message"
+            2) "orange"
+      2) 1) 1526569506935-0
+         2) 1) "message"
+            2) "strawberry"
+```
+
+Bob asked for a maximum of two messages and is reading via the same group `mygroup`. So what happens is that Redis reports just *new* messages. As you can see the "apple" message is not delivered, since it was already delivered to Alice, so Bob gets orange and strawberry, and so forth.
+
+This way Alice, Bob, and any other consumer in the group, are able to read different messages from the same stream, to read their history of yet to process messages, or to mark messages as processed. This allows creating different topologies and semantics to consume messages from a stream.
+
+There are a few things to keep in mind:
+
+* Consumers are auto-created the first time they are mentioned, no need for explicit creation.
+* Even with **XREADGROUP** you can read from multiple keys at the same time, however for this to work, you need to create a consumer group with the same name in every stream. This is not a common need, but it is worth to mention that the feature is technically available.
+* **XREADGROUP** is a *write command* because even if it reads from the stream, the consumer group is modified as a side effect of reading, so it can be only called in master instances.
+
+An example of consumer implementation, using consumer groups, written in the Ruby language could be the following. The Ruby code is written in a way to be readable from virtually any experienced programmer programming in some other language and not knowing Ruby:
+
+```ruby
+require 'redis'
+
+if ARGV.length == 0
+    puts "Please specify a consumer name"
+    exit 1
+end
+
+ConsumerName = ARGV[0]
+GroupName = "mygroup"
+r = Redis.new
+
+def process_message(id,msg)
+    puts "[#{ConsumerName}] #{id} = #{msg.inspect}"
+end
+
+$lastid = '0-0'
+
+puts "Consumer #{ConsumerName} starting..."
+check_backlog = true
+while true
+    # Pick the ID based on the iteration: the first time we want to
+    # read our pending messages, in case we crashed and are recovering.
+    # Once we consumed our history, we can start getting new messages.
+    if check_backlog
+        myid = $lastid
+    else
+        myid = '>'
+    end
+
+    items = r.xreadgroup('GROUP',GroupName,ConsumerName,'BLOCK','2000','COUNT','10','STREAMS',:my_stream_key,myid)
+
+    if items == nil
+        puts "Timeout!"
+        next
+    end
+
+    # If we receive an empty reply, it means we were consuming our history
+    # and that the history is now empty. Let's start to consume new messages.
+    check_backlog = false if items[0][1].length == 0
+
+    items[0][1].each{|i|
+        id,fields = i
+
+        # Process the message
+        process_message(id,fields)
+
+        # Acknowledge the message as processed
+        r.xack(:my_stream_key,GroupName,id)
+
+        $lastid = id
+    }
+end
+```
+
+As you can see the idea here is to start consuming the history, that is, our list of pending messages. This is useful because the consumer may have crashed before, so in the event of a restart we want to read again messages that were delivered to us without getting acknowledged. This way we can process a message multiple times or one time (at least in the case of consumers failures, but there are also the limits of Redis persistence and replication involved, see the specific section about this topic).
+
+Once the history was consumed, and we get an empty list of messages, we can switch to use the `>` special ID in order to consume new messages.
