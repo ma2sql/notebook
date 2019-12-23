@@ -83,8 +83,6 @@ tags: [redis, stream]
 
 리스트의 블로킹 오퍼레이션과 마찬가지로, 의미론적으로 FIFO 스타일이기 때문에, 블로킹 스트림은 읽기는 데이터를 기다리는 클라이언트의 관점에서는 공정하다. 주어진 스트림에 대해 블록된 첫 클라이언트는 새로운 아이템이 사용 가능할 때 차단이 해제되는 첫 번째 클라이언트가 된다.
 
-**XREAD** has no other options than **COUNT** and **BLOCK**, so it's a pretty basic command with a specific purpose to attach consumers to one or multiple streams. More powerful features to consume streams are available using the consumer groups API, however reading via consumer groups is implemented by a different command called **XREADGROUP**, covered in the next section of this guide.
-
 **XREAD**에는 **COUNT**와 **BLOCK**외의 다른 옵션은 없고, 컨슈머를 하나 또는 그 이상의 스트림으로 연결하기 위한 특정한 목적을 가진 매우 기본적인 커맨드다. 스트림을 소비하기 위한 좀 더 강력한 기능은 컨슈머 그룹 API (Consumer Groups API)를 사용함으로써 가능해지는데, 컨슈머 그룹을 통한 읽기는 **XREADGROUP**이라는 또 다른 커맨드에 의해 실현될 수 있다. 이것에 대한 가이드는 다음 섹션에서 다룬다.
 
 
