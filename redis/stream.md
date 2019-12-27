@@ -90,7 +90,7 @@ tags: [redis, stream]
 
 지금 하고 있는 일이 서로 다른 클라이언트로부터 동일한 스트림을 소비하는 것일때, 그러면 **XREAD** N 클라인트로 팬아웃(fan-out)하는 방법을 이미 제공하고 있고, 읽기 확장성을 제공하기 위해 잠재적으로는 슬레이브를 이용할 수도 있다. 하지만 특정한 상황에서 우리가 원하는 것은 다수의 클라이언트에게 동일한 스트림의 메시지를 제공하는 것이 아니라, 동일한 스트림으로부터 메세지의 **각각 다른 서브셋**을 다수의 클라이언트에게 제공하는 것이다. 이것이 유용한 분명한 경우는 메시지의 처리가 느린 경우이다. 스트림의 각각 다른 부분을 전달받을 수 있는 워커를 N개 가질 수 있다는 것은, 좀 더 많은 일을 할 수 있도록 준비가 된 워커로 메시지를 라우팅함으로써, 메시지의 처리를 확장할 수 있도록 해준다.
 
-In practical terms, if we imagine having three consumers C1, C2, C3, and a stream that contains the messages 1, 2, 3, 4, 5, 6, 7 then what we want is to serve the messages like in the following diagram:
+현실적으로, 우리가 C1, C2, C3 3개의 컨슈머를 가지고 있고, 스트림 하나는 1,2,3,4,5,6,7의 메시지를 가지고 있다고 상상해보자. 우리가 원하는 것은 다음의 다이어그램과 같이 메시지를 처리하는 것이다.
 
 ```
 1 -> C1
@@ -102,17 +102,17 @@ In practical terms, if we imagine having three consumers C1, C2, C3, and a strea
 7 -> C1
 ```
 
-In order to obtain this effect, Redis uses a concept called *consumer groups*. It is very important to understand that Redis consumer groups have nothing to do from the point of view of the implementation with Kafka (TM) consumer groups, but they are only similar from the point of view of the concept they implement, so I decided to do not change terminology compared to the software product that initially popularized such idea.
+이러한 효과를 얻기 위해서, 레디스는 *consumer groups*라고 불리는 컨셉을 사용한다. 레디스 컨슈머 그룹은 구현의 관점에서 Kafka(TM)의 컨슈머 그룹과 관련이 없다는 것을 이해하는 것은 매우 중요하지만, 구현하는 컨셉의 관점에서는 유사하다. 따라서, 그러한 아이디어를 대중화한 소프트웨어 프로덕트와 비교되는 이 용어를 바꾸지 않기로 했다.
 
-A consumer group is like a *pseudo consumer* that gets data from a stream, and actually serves multiple consumers, providing certain guarantees:
+컨슈머 그룹은 스트림으로 데이터를 얻어, 실제 여러 컨슈머에게 전달하는 가상의 컨슈머? (*pseudo consumer*)와 같고, 특정한 보장을 제공한다.
 
-1. Each message is served to a different consumer so that it is not possible that the same message is delivered to multiple consumers.
-2. Consumers are identified, within a consumer group, by a name, which is a case-sensitive string that the clients implementing consumers must choose. This means that even after a disconnect, the stream consumer group retains all the state, since the client will claim again to be the same consumer. However, this also means that it is up to the client to provide a unique identifier.
-3. Each consumer group has the concept of the *first ID never consumed* so that, when a consumer asks for new messages, it can provide just messages that were never delivered previously.
-4. Consuming a message however requires explicit acknowledge using a specific command, to say: this message was correctly processed, so can be evicted from the consumer group.
-5. A consumer group tracks all the messages that are currently pending, that is, messages that were delivered to some consumer of the consumer group, but are yet to be acknowledged as processed. Thanks to this feature, when accessing the history of messages of a stream, each consumer *will only see messages that were delivered to it*.
+1. 각 메시지는 각각의 컨슈머로 서빙되며, 동일한 메시지가 여러 컨슈머로 전달될 가능성은 없다.
+2. 컨슈머는 하나의 컨슈머 그룹 내에서 이름으로 식별되며, 이 이름은 대소문자를 구분하는 문자열로, 컨슈머를 구현하는 클라이언트는 반드시 이름을 지정해야한다. 이것은 심지어 커넥션이 끊긴 이후에도, 스트림 컨슈머 그룹은 모든 상태를 유지, 때문에 클라이트는 다시 동일한 컨슈머가 될 수 있다. 그러나, 물론 이것은 클라이언트가 제공하는 유니크한 식별자에 달려있다.
+3. 각 컨슈머는 *first ID never consumed* 라는 컨셉을 가지고 있는데, 컨슈머가 새로운 메시지를 요청할 때, 이전에 결코 전달된 적이 없이 메시지를 전달한다.
+4. 메시지를 소비하는 것은 하지만 지정된 커맨드를 이용한 명시적인 응답을 필요로 한다. 말하자면: 이 메시지는 올바르게 처리되었기 때문에, 컨슈머 그룹에서 제거되어도 된다.
+5. 컨슈머 그룹은 현재 보류중인 모든 메시지를 추적한다. 메시지가 컨슈머 그룹내의 어떤 컨슈머로 전달이 되었지만, 아직 처리되었다는 응답을 받지 못한 것을 의미한다. 이러한 기능 덕분에 스트림의 메시지 히스토리에 접근할 때, 각 컨슈머는 *오직 자신에게 전달된 메시지만 볼 수 있다.*
 
-In some way a consumer group can be imagined as some *amount of state* about a stream:
+어떤 면에서, 컨슈머 그룹은 스트림에 대한 상태 총합의 일부로써 생각해볼 수 있다:
 
 ```
 +----------------------------------------+
@@ -129,13 +129,13 @@ In some way a consumer group can be imagined as some *amount of state* about a s
 +----------------------------------------+
 ```
 
-If you see this from this point of view, it is very simple to understand what a consumer group can do, how it is able to just provide consumers with their history of pending messages, and how consumers asking for new messages will just be served with message IDs greater than `last_delivered_id`. At the same time, if you look at the consumer group as an auxiliary data structure for Redis streams, it is obvious that a single stream can have multiple consumer groups, that have a different set of consumers. Actually, it is even possible for the same stream to have clients reading without consumer groups via **XREAD**, and clients reading via **XREADGROUP** in different consumer groups.
+이러한 관점으로부터 본다면, 컨슈머 그룹이 무엇을 하는지, 어떻게 보류중인 메시지의 히스토리를 컨슈머에게 전달할 수 있는지, 그리고 어떠한 새로운 메시지를 요청하는 컨슈머가 `last_delivered_id` 보다 큰 메시지 ID만을 전달받을 수 있는지, 쉽게 이해할 수 있다. 동시에 레디스의 스트림에 대한 보조적인 자료구조의 측면으로 컨슈머 그룹을 본다면, 하나의 스트림이 여러 컨슈머 그룹을 가질 수 있고, 각각의 컨슈머 그룹을 가질 수 있는 것은 분명하다. 실제로 심지어  동일한 스트림에 대해 컨슈머 그룹없이  **XREAD**를 이용하여 데이터를 읽는 클라이언트와 각각의 컨슈머 그룹에서 **XREADGROUP**을 이용하여 데이터를 읽는 클라이언트를 존재하는 것도 가능하다.
 
-Now it's time to zoom in to see the fundamental consumer group commands, that are the following:
+이제, 다음과 같은 기본적인 컨슈머 그룹 커맨드들을 살펴보자.
 
-* **XGROUP** is used in order to create, destroy and manage consumer groups.
-* **XREADGROUP** is used to read from a stream via a consumer group.
-* **XACK** is the command that allows a consumer to mark a pending message as correctly processed.
+* **XGROUP**은 컨슈머 그룹을 생성하고, 삭제하고, 관리하는데 사용되는 명령이다.
+* **XREADGROUP**은 컨슈머 그룹을 통해 데이터를 읽기 위해 사용되는 명령이다.
+* **XACK**은 보류중인 메시지를 올바르게 처리된 것으로 표시할 수 있는 커맨드다.
 
 ## Creating a consumer group
 
