@@ -139,27 +139,27 @@ tags: [redis, stream]
 
 ## Creating a consumer group
 
-Assuming I have a key `mystream` of type stream already existing, in order to create a consumer group I need to do just the following:
+만약 `mystream` 이라는 스트림 데이터 타입의 키가 이미 레디스에 저장되어 있다고 할 때, 그룹을 만들기 위해서는 아래와 같이 할 필요가 있다.
 
 ```
 > XGROUP CREATE mystream mygroup $
 OK
 ```
 
-As you can see in the command above when creating the consumer group we have to specify an ID, which in the example is just `$`. This is needed because the consumer group, among the other states, must have an idea about what message to serve next at the first consumer connecting, that is, what is the current *last message ID* when the group was just created? If we provide `$` as we did, then only new messages arriving in the stream from now on will be provided to the consumers in the group. If we specify `0` instead the consumer group will consume *all* the messages in the stream history to start with. Of course, you can specify any other valid ID. What you know is that the consumer group will start delivering messages that are greater than the ID you specify. Because `$` means the current greatest ID in the stream, specifying `$` will have the effect of consuming only new messages.
+위의 커맨드에서 보듯이, 컨슈머 그룹을 만들 때에는 ID를 반드시 지정해야하고, 예제에서는 `$`를 지정했다. 이것이 필요한 이유는 각기 다른 상태의 컨슈머 그룹은 첫 번째 컨슈머가 접속할 때, 다음에 제공되어야하는 메시지가 무엇인지에 대한 인식이 있어야하기 때문이고, 그 인식은 그룹이 만들어졌을 때, 현재의 *last message ID*가 무엇인지에 대한 것이다. `$`를 지정한다면, 그때부터 스트림 내에 도착하는 새로운 메시지는 그룹 내의 컨슈머들에게 전달될 것이다. 대신 `0`을 지정한다면, 컨슈머 그룹은 스트림 히스토리의 시작부터 *모든* 메시지를 소비할 것이다. 물론, 다른 유효한 ID를 지정하는 것 또한 가능하다. 알아야할 것은 컨슈머 그룹은 지정된 ID보다 큰 값의 메시지들을 전달하기 시작한다는 것이다. `$`는 현재 스트림 내에서 가장 큰 ID 값을 지정한다는 의미이기 때문에, `$`는 오직 새로운 메시지만 소비하는 효과가 있다.
 
-`XGROUP CREATE` also supports creating the stream automatically, if it doesn't exist, using the optional `MKSTREAM` subcommand as the last argument:
+`XGROUP CREATE`는 마지막 인수로 `MKSTREAM`를 사용해서, 존재하지 않는 스트림을 자동으로 생성하게 하는 것 또한 지원한다.
 
 ```
 > XGROUP CREATE newstream mygroup $ MKSTREAM
 OK
 ```
 
-Now that the consumer group is created we can immediately start trying to read messages via the consumer group, by using the **XREADGROUP** command. We'll read from the consumers, that we will call Alice and Bob, to see how the system will return different messages to Alice and Bob.
+이제 컨슈머 그룹이 생성되었기 때문에, 우리는 즉시 컨슈머 그룹에 **XREADGROUP** 커맨드를 사용해서 메시지를 읽어볼 수 있다. 시스템이 Alice와 Bob으로 각각 다른 메시지를 어떻게 반환하는지 알아보기 위해, Alice와 Bob이라고 불리는 컨슈머들로부터 데이터를 읽을 것이다.
 
-**XREADGROUP** is very similar to **XREAD** and provides the same **BLOCK** option, otherwise it is a synchronous command. However there is a *mandatory* option that must be always specified, which is **GROUP** and has two arguments: the name of the consumer group, and the name of the consumer that is attempting to read. The option **COUNT** is also supported and is identical to the one in **XREAD**.
+**XREADGROUP**은 **XREAD**와 매우 유사하고, 동일한 **BLOCK** 옵션을 제공하는데, 이 부분을 제외하면 동기식 커맨드이다. 그러나 반드시 지정되어야하는 *필수(manatory)* 옵션인 **GROUP**이 있는데, 이 옵션은 컨슈머 그룹의 이름과 읽기를 시도하는 컨슈머의 이름, 2개의 인수를 지정한다. 그리고 **XREAD**와 동일한 **COUNT** 옵션 또한 지원한다.
 
-Before reading from the stream, let's put some messages inside:
+스트림으로부터 데이터를 읽기 전에, 몇가지 메시지를 입력해보자.
 
 ```
 > XADD mystream * message apple
@@ -173,10 +173,9 @@ Before reading from the stream, let's put some messages inside:
 > XADD mystream * message banana
 1526569544280-0
 ```
+참고: *여기의 message는 필드명이고, 과일 이름은 관련된 값이다. 스트림 아이템은 작은 딕셔너리라는 것을 기억하자.*
 
-Note: *here message is the field name, and the fruit is the associated value, remember that stream items are small dictionaries.*
-
-It is time to try reading something using the consumer group:
+그렇다면 이제 컨슈머 그룹을 이용해서 무언가를 읽어보자.
 
 ```
 > XREADGROUP GROUP mygroup Alice COUNT 1 STREAMS mystream >
