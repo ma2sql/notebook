@@ -233,13 +233,13 @@ Bob은 최대 2개의 메시지를 요청했고, 동일하게 `mygroup`을 통�
 
 이러한 방법으로 그룹 내의 Alice, Bob, 그리고 다른 컨슈머들은 동일한 스트림으로부터 각각 다른 메시지를 읽을 수 있고, 아직 처리되지 않은 메시지의 히스토리를 읽을 수도 있으며, 또는 메시지를 처리된 것으로 표시할 수 있다. 이것은 스트림으로부터 메시지를 소비하기 위한 별도의 토폴로지와 시맨틱(의미 체계)를 만들 수 있게 한다.
 
-There are a few things to keep in mind:
+명심해야할 몇 가지가 있다:
 
-* Consumers are auto-created the first time they are mentioned, no need for explicit creation.
-* Even with **XREADGROUP** you can read from multiple keys at the same time, however for this to work, you need to create a consumer group with the same name in every stream. This is not a common need, but it is worth to mention that the feature is technically available.
-* **XREADGROUP** is a *write command* because even if it reads from the stream, the consumer group is modified as a side effect of reading, so it can be only called in master instances.
+* 컨슈머는 처음 언급될 때 자동으로 생성되어, 명시적으로 생성할 필요는 없다.
+* **XREADGROUP**으로도 동시에 여러 키를 읽을 수 있지만, 이 기능을 사용하려면, 매 스트림마다 동일한 이름으로 컨슈머 그룹을 만들 필요가 있다. 이것은 보통 필요하지 않지만, 이러한 기능이 기술적으로는 가능하다는 것 정도는 알아둘 가치가 있다.
+* **XREADGROUP**은 스트림으로부터 데이터를 읽는 것암에도 *write command*로 분류된다. 데이터의 읽기의 부수적인 효과로 컨슈머 그룹이 변경되기 때문에, 오직 마스터 노드에서만 호출된다.
 
-An example of consumer implementation, using consumer groups, written in the Ruby language could be the following. The Ruby code is written in a way to be readable from virtually any experienced programmer programming in some other language and not knowing Ruby:
+다음은 컨슈머 그룹을 사용한 컨슈머 구현의 예로, 루비로 작성되었다. 이 루비 코드는 다른 언어로 프로그래밍을 하고, 루비는 잘 모르는 거의 모든 숙련된 프로그래머가 읽을 수 있는 방식으로 작성되었다:
 
 ```ruby
 require 'redis'
@@ -296,9 +296,9 @@ while true
 end
 ```
 
-As you can see the idea here is to start consuming the history, that is, our list of pending messages. This is useful because the consumer may have crashed before, so in the event of a restart we want to read again messages that were delivered to us without getting acknowledged. This way we can process a message multiple times or one time (at least in the case of consumers failures, but there are also the limits of Redis persistence and replication involved, see the specific section about this topic).
+여기서 볼 수 있듯이, 이 아이디어는 히스토리를 소비하는 것으로 시작하고, 그 히스토리는 보류중인 메시지의 리스트이다. 전에 컨슈머가 크래시되어 재시작이 된다면, 우리는 전송은 되었지만 아직 응답(ACK)를 받지 못한 메시지를 다시 읽어야 할 때, 이것은 유용하다. 이 방식으로 우리는 메시지를 여러번 처리하거나 한 번만 처리할 수 있다. (적어도 컨슈머의 실패의 경우, 하지만 레디스의 영속성과 리플리케이션을 포함하는 제한 사항 또한 있다. 이 주제에 대해서는 이후의 섹션을 참고하라.)
 
-Once the history was consumed, and we get an empty list of messages, we can switch to use the `>` special ID in order to consume new messages.
+한 번 히스토리가 소비되고, 비어있는 메시지 리스트를 받게 되면, 새로운 메시지를 소비하기 위해 `>` 특별 ID로 변경할 수 있다.
 
 ## Recovering from permanent failures
 
