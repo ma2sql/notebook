@@ -185,16 +185,16 @@ OK
             2) "apple"
 ```
 
-**XREADGROUP** replies are just like **XREAD** replies. Note however the `GROUP <group-name> <consumer-name>` provided above, it states that I want to read from the stream using the consumer group `mygroup` and I'm the consumer `Alice`. Every time a consumer performs an operation with a consumer group, it must specify its name uniquely identifying this consumer inside the group.
+**XREADGROUP**의 응답은 **XREAD**의 응답과 동일하다. 그러나 위에서는 `GROUP <group-name> <consumer-name>`이 제공되었는데, 이것은 컨슈머 그룹 `mygroup`을 이용해서 스트림으로부터 데이터를 읽기를 원하고, 컨슈머명은 `Alice`라고 명시했다. 컨슈머가 컨슈머 그룹과 함께 오퍼레이션을 수행하려고 할 때마다, 반드시 그룹 내에서 유니크하게 식별할 수 있는 이름을 지정해야한다.
 
-There is another very important detail in the command line above, after the mandatory **STREAMS** option the ID requested for the key `mystream` is the special ID `>`. This special ID is only valid in the context of consumer groups, and it means: **messages never delivered to other consumers so far**.
+위의 커맨드 라인에는 또다른 아주 중요한 세부 사항이 있는데, **STREAMS**라는 필수 옵션에 뒤따르는 키 `mystream`에 대해 요청된 ID가 특별한 ID 값인 `>`로 지정된 것이다. 이 특별한 ID는 오직 컨슈머 그룹의 문맥 내에서만 유효하고, 그 의미는 **메시지가 아직까지 결코 다른 컨슈머로 전달된 적이 없다.**이다.
 
-This is almost always what you want, however it is also possible to specify a real ID, such as `0` or any other valid ID, in this case however what happens is that we request to **XREADGROUP** to just provide us with the **history of pending messages**, and in such case, will never see new messages in the group. So basically **XREADGROUP** has the following behavior based on the ID we specify:
+이것은 거의 항상 당신이 원한 것일텐데, 하지만 `0`이나 다른 유효한 ID와 같이 실제 존재하는 ID로 지정하는 것 또한 가능하다. 이러한 경우에 발생하는 것은 우리가 요청한 **XREADGROUP**이 단지 보류중인 메시지의 히스토리를 우리에게 제공하는 것 뿐이고, 이러한 경우에 우리는 그룹 내에서 새로운 메시지를 절대 볼 수 없을 것이다. 그래서 기본적으로 **XREADGROUP**는 우리가 지정한 ID에 기반으로 다음과 같이 동작한다.
 
-* If the ID is the special ID `>` then the command will return only new messages never delivered to other consumers so far, and as a side effect, will update the consumer group *last ID*.
-* If the ID is any other valid numerical ID, then the command will let us access our *history of pending messages*. That is, the set of messages that were delivered to this specified consumer (identified by the provided name), and never acknowledged so far with **XACK**.
+* 만약 ID를 특별한 값인 `>`로 지정하면, 커맨드는 이전까지 다른 컨슈머로 절대 전달하지 않은 새로운 메시지만을 반환할 것이고, 부수적으로는 컨슈머 그룹의 *last ID*를 업데이트할 것이다.
+* 만약 ID를 유효한 숫자 ID로 지정하면, 커맨드는 우리가 *보류중인 메시지의 히스토리(history of pending messages)*로 접근하게 할 것이다. 그것은, 특정한 컨슈머(전달한 이름에 의해 식별될 수 있는)로 전달된 적이 있는 메시지의 집합이고, 아직까지 **XACK**로 수신에 대한 통지가 없었던 메시지이다.
 
-We can test this behavior immediately specifying an ID of 0, without any **COUNT** option: we'll just see the only pending message, that is, the one about apples:
+우리는 **COUNT** 옵션 없이 ID를 0으로 지정해서 이 동작을 즉시 테스트해볼 수 있다. 우리는 오직 보류중인 메시지만을 볼 수 있고, 그것은 사과(apple)에 관한 것이다.
 
 ```
 > XREADGROUP GROUP mygroup Alice STREAMS mystream 0
@@ -204,7 +204,7 @@ We can test this behavior immediately specifying an ID of 0, without any **COUNT
             2) "apple"
 ```
 
-However, if we acknowledge the message as processed, it will no longer be part of the pending messages history, so the system will no longer report anything:
+그러나, 만약 우리가 이 메시지가 처리되었다고 통지를 한다면, 더 이상 보류 메시지 히스토리의 일부분이 아니게 되고, 그렇기 때문에 시스템은 더 이상 어떠한 것도 보고하지 않는다.
 
 ```
 > XACK mystream mygroup 1526569495631-0
@@ -214,9 +214,9 @@ However, if we acknowledge the message as processed, it will no longer be part o
    2) (empty list or set)
 ```
 
-Don't worry if you yet don't know how **XACK** works, the concept is just that processed messages are no longer part of the history that we can access.
+아직 **XACK**가 어떻게 동작하는지 모르더라도, 걱정할 필요가 없다. 컨셉은 처리된 메시지가 더 이상 우리가 접근할 수 있는 히스토리의 일부분이 아니라는 것이다.
 
-Now it's the turn of Bob to read something:
+이제, Bob으로 무언가를 읽을 차례이다.
 
 ```
 > XREADGROUP GROUP mygroup Bob COUNT 2 STREAMS mystream >
@@ -229,9 +229,9 @@ Now it's the turn of Bob to read something:
             2) "strawberry"
 ```
 
-Bob asked for a maximum of two messages and is reading via the same group `mygroup`. So what happens is that Redis reports just *new* messages. As you can see the "apple" message is not delivered, since it was already delivered to Alice, so Bob gets orange and strawberry, and so forth.
+Bob은 최대 2개의 메시지를 요청했고, 동일하게 `mygroup`을 통해서 데이터를 읽는다. 그렇게 해서 발생하는 일은 Redis가 새로운 메시지를 반환하는 것이다. 위에서 볼 수 있는 것처럼 "apple" 메시지는 전달되지 않으며, 이미 Alice에게 전달된 적이 있기 때문이다. 그래서 Bob은 orange와 strawberry 등등을 얻을 수 있다.
 
-This way Alice, Bob, and any other consumer in the group, are able to read different messages from the same stream, to read their history of yet to process messages, or to mark messages as processed. This allows creating different topologies and semantics to consume messages from a stream.
+이러한 방법으로 그룹 내의 Alice, Bob, 그리고 다른 컨슈머들은 동일한 스트림으로부터 각각 다른 메시지를 읽을 수 있고, 아직 처리되지 않은 메시지의 히스토리를 읽을 수도 있으며, 또는 메시지를 처리된 것으로 표시할 수 있다. 이것은 스트림으로부터 메시지를 소비하기 위한 별도의 토폴로지와 시맨틱(의미 체계)를 만들 수 있게 한다.
 
 There are a few things to keep in mind:
 
