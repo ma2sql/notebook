@@ -302,7 +302,7 @@ end
 
 ## Recovering from permanent failures
 
-The example above allows us to write consumers that participate to the same consumer group, taking each a subset of messages to process, and recovering from failures re-reading the pending messages that were delivered just to them. However in the real world consumers may permanently fail and never recover. What happens to the pending messages of the consumer that never recovers after stopping for any reason?
+위의 예는 메시지의 서브셋 각각을 얻고, 클라이언트로 전달되었지만 아직 보류중인 메시지를 다시 읽어 실패 상태를 복구하는, 동일한 컨슈머 그룹에 참가하는 컨슈머를 작성하도록 해준다. 하지만 현실에서는 컨슈머는 영구적으로 실패하고 절대 복구될 수 없을지도 모른다. 어떠한 이유때문에 멈춘 이후 복구되지 못하는 컨슈머의 보류중인 메시지에는 무슨 일이 발생할까?
 
 Redis consumer groups offer a feature that is used in these situations in order to *claim* the pending messages of a given consumer so that such messages will change ownership and will be re-assigned to a different consumer. The feature is very explicit, a consumer has to inspect the list of pending messages, and will have to claim specific messages using a special command, otherwise the server will take the messages pending forever assigned to the old consumer, in this way different applications can choose if to use such a feature or not, and exactly the way to use it.
 
