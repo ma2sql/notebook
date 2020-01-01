@@ -304,9 +304,10 @@ end
 
 위의 예는 메시지의 서브셋 각각을 얻고, 클라이언트로 전달되었지만 아직 보류중인 메시지를 다시 읽어 실패 상태를 복구하는, 동일한 컨슈머 그룹에 참가하는 컨슈머를 작성하도록 해준다. 하지만 현실에서는 컨슈머는 영구적으로 실패하고 절대 복구될 수 없을지도 모른다. 어떠한 이유때문에 멈춘 이후 복구되지 못하는 컨슈머의 보류중인 메시지에는 무슨 일이 발생할까?
 
-Redis consumer groups offer a feature that is used in these situations in order to *claim* the pending messages of a given consumer so that such messages will change ownership and will be re-assigned to a different consumer. The feature is very explicit, a consumer has to inspect the list of pending messages, and will have to claim specific messages using a special command, otherwise the server will take the messages pending forever assigned to the old consumer, in this way different applications can choose if to use such a feature or not, and exactly the way to use it.
+레디스 컨슈머 그룹은 이러한 상황에서 주어진 컨슈머의 보류중인 메시지를 클레임(*claim*)하기 위해서 사용할 수 있는 기능으로, 그러한 메시지의 소유권을 변경하고, 다른 컨슈머로 다시 할당한다. 이 기능은 매우 명시적인데, 컨슈머는 보류중인 메시지의 목록을 검사하고, 지정한 메시지를 특별한 커맨드를 이용해서 클레임(claim)해야 하는데, 그렇지 않으면 서버는 영원히 보류중인 메시지를 오래된 컨슈머로 할당해둔다. 이러한 방법으로 각각의 어플리케이션은 이러한 기능을 이용할지 말지, 그리고 정확하게 그 기능을 사용할지를 선택할 수 있다.
 
-The first step of this process is just a command that provides observability of pending entries in the consumer group and is called **XPENDING**. This is just a read-only command which is always safe to call and will not change ownership of any message. In its simplest form, the command is just called with two arguments, which are the name of the stream and the name of the consumer group.
+이 프로세스의 첫 번째 단계는 단순히 **XPENDING** 커맨드를 이용하는 것이고, 이것은 컨슈머 내의 보류 상태를 관찰할 수 있게 한다. 이것은 read-only 커맨드로, 호출로부터 안전하며 어떤 메시지의 소유권도 변경하지 않는다. 단순한 양식으로, 이 커맨드는 스트림의 이름과 컨슈머 그룹의 이름, 두개의 인수와 함께 호출된다.
+
 
 ```
 > XPENDING mystream mygroup
@@ -317,15 +318,15 @@ The first step of this process is just a command that provides observability of 
       2) "2"
 ```
 
-When called in this way the command just outputs the total number of pending messages in the consumer group, just two messages in this case, the lower and higher message ID among the pending messages, and finally a list of consumers and the number of pending messages they have. We have just Bob with two pending messages because the only message that Alice requested was acknowledged using **XACK**.
+이러한 방식으로 호출될 때, 커맨드는 그룹 내에서 보류중인 메시지의 총 개수를 표시하며, 이번 경우에는 2개의 메시지가 표시된다. 보류중인 메시지의 ID가 제일 작은 것과 큰 것이 표기되며, 마지막으로는 보류중인 메시지를 가진 컨슈머의 리스트와 각각 보유한 보류중의 메시지의 개수를 출력한다. 여기서는 2개의 보류중인 Bob이 표기되는데, Alice가 요청한 메시지에 대해서만 **XACK**를 이용해서 응답이 있었기 때문이다.
 
-We can ask for more info by giving more arguments to **XPENDING**, because the full command signature is the following:
+**XPENDING**에 더 많은 인수를 주어 더 많은 정보를 요청할 수도 있는데, 전체 커맨드 시그내쳐는 다음과 같기 때문이다.
 
 ```
 XPENDING <key> <groupname> [<start-id> <end-id> <count> [<consumer-name>]]
 ```
 
-By providing a start and end ID (that can be just `-` and `+` as in **XRANGE**) and a count to control the amount of information returned by the command, we are able to know more about the pending messages. The optional final argument, the consumer name, is used if we want to limit the output to just messages pending for a given consumer, but we'll not use this feature in the following example.
+*시작(start-id) ID*와  *끝 ID(end-id)* (단순히 **XRANGE**와 같이 `-`와 `+`를 부여할 수도 있다.)와 커맨드에 의해 반환될 정보의 전체 수를 제어할 *개수(count-id)* 를 부여함으로써, 우리는 보류중인 메시지에 대해 더 많은 것을 알 수 있다. 선택적인 인수중 마지막인 *컨슈머명(consumer-name)* 은 주어진 컨슈머에 대해서만 보류중인 메시지를 출력하도록 제한하고자 할 때 사용되지만, 다음 예에서 이 기능은 사용하지 않을 것이다. 
 
 ```
 > XPENDING mystream mygroup - + 10
@@ -339,9 +340,10 @@ By providing a start and end ID (that can be just `-` and `+` as in **XRANGE**) 
    4) (integer) 1
 ```
 
-Now we have the detail for each message: the ID, the consumer name, the *idle time* in milliseconds, which is how much milliseconds have passed since the last time the message was delivered to some consumer, and finally the number of times that a given message was delivered. We have two messages from Bob, and they are idle for 74170458 milliseconds, about 20 hours.
+이제 각 메시지에 대한 상세 정보를 확인할 수 있는데, *ID* 와 *컨슈머명*, 컨슈머로 메시지가 전달된 이후, 얼마나 많은 밀리초동안의 시간이 지났는가를 확인할 수 있는 *유휴 시간* , 그리고 마지막으로 *메시지가 전달된 시간* 을 알 수 있다. Bob으로부터 2개의 메시지가 있고, 74170458 밀리초 동안 유효 상태였으며, 이것은 대략 20시간이다.
 
-Note that nobody prevents us from checking what the first message content was, just using **XRANGE**.
+**XRANGE**만을 이용해서 첫 메시지의 내용이 무엇인지 확인할 수 있는 사람이 아무도 없음을 유의하라.
+
 
 ```
 > XRANGE mystream 1526569498055-0 1526569498055-0
@@ -350,9 +352,9 @@ Note that nobody prevents us from checking what the first message content was, j
       2) "orange"
 ```
 
-We have just to repeat the same ID twice in the arguments. Now that we have some idea, Alice may decide that after 20 hours of not processing messages, Bob will probably not recover in time, and it's time to *claim* such messages and resume the processing in place of Bob. To do so, we use the **XCLAIM** command.
+단순히 동일한 ID를 인수로 2번 반복해서 사용해야한다. 이제 우리는 이렇게 생각해볼 수 있는데, Alice는 메시지가 처리되지 않은 20시간 후에도 Bob이 시간내에 복구되지 않을 것이라고 판단할 수 있으며, 그러한 메시지에 대해서는 *claim* 하고, Bob을 대신해서 처리를 재개할 것이다. 그렇게 하기 위해, **XCLAIM** 커맨드를 사용한다.
 
-This command is very complex and full of options in its full form, since it is used for replication of consumer groups changes, but we'll use just the arguments that we need normally. In this case it is as simple as calling it like that:
+이 커맨드는 매우 복잡하고, 전체 형식의 옵션으로 가득한데, 컨슈머 그룹의 변경의 복제를 위해 사용되기 때문이다. 하지만 우리는 일반적으로 필요한 인수만을 사용한다. 이러한 경우에 다음과 같이 호출하는 것만큼 간단하다.
 
 ```
 XCLAIM <key> <group> <consumer> <min-idle-time> <ID-1> <ID-2> ... <ID-N>
