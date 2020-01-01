@@ -360,16 +360,16 @@ XPENDING <key> <groupname> [<start-id> <end-id> <count> [<consumer-name>]]
 XCLAIM <key> <group> <consumer> <min-idle-time> <ID-1> <ID-2> ... <ID-N>
 ```
 
-Basically we say, for this specific key and group, I want that the message IDs specified will change ownership, and will be assigned to the specified consumer name `<consumer>`. However, we also provide a minimum idle time, so that the operation will only work if the idle time of the mentioned messages is greater than the specified idle time. This is useful because maybe two clients are retrying to claim a message at the same time:
+이 명령으로, 지정한 키와 그룹에 대해 명시된 ID들의 소유권을 변경할 것이고, `<consumer>`에 지정된 컨슈머명으로 할당될 것이라고 말해준다. 그러나 또, 최소한의 유휴 시간을 지정하면, 언급된 메시지의 유휴 시간이 이 커맨드에서 지정한 유휴 시간보다 큰 것에 대해서만 동작하게 된다. 이것은 두 개의 클라이언트가 동시에 메시지를 차지하려고 시도할지도 모르기 때문에 유용하다:
 
 ```
 Client 1: XCLAIM mystream mygroup Alice 3600000 1526569498055-0
 Client 2: XCLAIM mystream mygroup Lora 3600000 1526569498055-0
 ```
 
-However claiming a message, as a side effect will reset its idle time! And will increment its number of deliveries counter, so the second client will fail claiming it. In this way we avoid trivial re-processing of messages (even if in the general case you cannot obtain exactly once processing).
+그러나 메시지를 차지(claim)하려고 하는 것의 사이드 이펙트로 메시지의 유휴 시간을 초기화시키는 것이 있다! 그리고 전달된 메시지의 카운트를 증가시킨다. 그래서 두 번째 클라이언트는 클레임에 실패할 것이다. 이러한 방법으로 우리는 메시지의 사소한 재처리를 피할 수 있다. (심지어 일반적으로 정확히 한 번만 처리할 수 없는 경우에도)
 
-This is the result of the command execution:
+이것은 명령의 실행 결과이다:
 
 ```
 > XCLAIM mystream mygroup Alice 3600000 1526569498055-0
@@ -378,11 +378,11 @@ This is the result of the command execution:
       2) "orange"
 ```
 
-The message was successfully claimed by Alice, that can now process the message and acknowledge it, and move things forward even if the original consumer is not recovering.
+이 메시지는 Alice에 의해 성공적으로 클레임이 되었고, 그래서 이제 메시지를 처리하고, 메시지를 받았음을 알릴 수 있다(ACK). 그리고 심지어 원래 컨슈머가 복구되지 않고 있더라도 상황을 진전시킬 수 있다.
 
-It is clear from the example above that as a side effect of successfully claiming a given message, the **XCLAIM** command also returns it. However this is not mandatory. The **JUSTID** option can be used in order to return just the IDs of the message successfully claimed. This is useful if you want to reduce the bandwidth used between the client and the server, but also the performance of the command, and you are not interested in the message because your consumer is implemented in a way that it will rescan the history of pending messages from time to time.
+위의 예로에서 보듯이, 주어진 메시지를 성공적으로 클레임하는 것의 사이드 이펙트로써, **XCLAIM** 커맨드는 또한 메시지를 반환하는 것은 명백하다. 그러나 이것은 필수가 아니다. 성공적으로 클레임된 메시지의 ID만을 리턴하기 위해서 **JUSTID** 옵션이 사용될 수 있다. 서버와 클라이언트간에 사용되는 네트워크 대역폭을 줄이기를 원하거나, 때때로 보류중인 메시지를 다시 스캔하는 방식으로 컨슈머가 구현되어 메시지를 읽을 필요가 없는 경우에는 이 옵션이 유용하다.
 
-Claiming may also be implemented by a separate process: one that just checks the list of pending messages, and assigns idle messages to consumers that appear to be active. Active consumers can be obtained using one of the observability features of Redis streams. This is the topic of the next section.
+클레임하는 것은 단계를 나누어 구현될 수도 있다: 첫 째, 보류중인 메시지의 목록을 체크하고, 유휴 메시지를 활성 상태의 컨슈머로 할당한다. 활성 상태의 컨슈머는 레디스 스트림의 관측 기능의 하나를 사용해서 획득할 수 있다. 이것은 다음 섹션의 주제이다.
 
 ## Claiming and the delivery counter
 
