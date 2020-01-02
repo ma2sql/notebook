@@ -386,9 +386,9 @@ Client 2: XCLAIM mystream mygroup Lora 3600000 1526569498055-0
 
 ## Claiming and the delivery counter
 
-The counter that you observe in the **XPENDING** output is the number of deliveries of each message. Such counter is incremented in two ways: when a message is successfully claimed via **XCLAIM** or when an **XREADGROUP** call is used in order to access the history of pending messages.
+**XPENDING** 출력 결과에서 관측할 수 있는 카운터는 각 메시지의 전송 수이다. 그러한 카운터는 두 가지 방식으로 증가된다: **XCLAIM**에 의해 메시지가 성공적으로 클레임되었을 때, 또는 보류 메시지의 히스토리에 접근하기 위해 **XREADGROUP**이 호출이 사용되는 경우이다.
 
-When there are failures, it is normal that messages are delivered multiple times, but eventually they usually get processed. However there is sometimes a problem to process a given specific message, because it is corrupted or crafted in a way that triggers a bug in the processing code. In such a case what happens is that consumers will continuously fail to process this particular message. Because we have the counter of the delivery attempts, we can use that counter to detect messages that for some reason are not processable at all. So once the deliveries counter reaches a given large number that you chose, it is probably wiser to put such messages in another stream and send a notification to the system administrator. This is basically the way that Redis streams implement the concept of the *dead letter*.
+실패가 있을 때, 메시지가 여러 번 전달되는 것이 일반적이지만, 결국 그 메시지들은 처리되는 것이 보통이다. 하지만 메시지 처리 코드에 버그가 발생하는 식으로 손상되거나 조작되기 때문에, 메시지를 처리하는 데에 문제가 있는 경우가 있다. 그러한 경우 컨슈머는 지속적으로 특정 메시지의 처리에 실패하는 일이 발생할 것이다. 때문에 우리는 전송을 시도에 대한 카운터를 가지고 있고, 어떠한 이유로 전혀 처리가 가능하지 않은 메시지를 발견하는데 이를 사용할 수 있다. 그래서 전송 카운터가 당신이 생각하는 큰 수에 도달하면, 그러한 메시지를 다른 스트림에 넣고, 시스템 관리자에게 알리는 편이 아마 현명할 것이다. 이것은 레디스 스트림이 *dead letter* 라는 컨셉을 구현하는 기본적인 방식이다.
 
 ## Streams observability
 
