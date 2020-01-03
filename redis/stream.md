@@ -392,11 +392,11 @@ Client 2: XCLAIM mystream mygroup Lora 3600000 1526569498055-0
 
 ## Streams observability
 
-Messaging systems that lack observability are very hard to work with. Not knowing who is consuming messages, what messages are pending, the set of consumer groups active in a given stream, makes everything opaque. For this reason, Redis streams and consumer groups have different ways to observe what is happening. We already covered **XPENDING**, which allows us to inspect the list of messages that are under processing at a given moment, together with their idle time and number of deliveries.
+관측이 부족한 메시징 시스템은 작업하기가 매우 어렵다. 어떤 것이 메시지를 소비하고 있는지, 무슨 메시지가 보류 중인지, 주어진 스트림 내의 컨슈머 그룹의 집합을 알지 못한다면 모든 것이 불투명해진다. 이러한 이유로, 레디스 스트림과 컨슈머 그룹은 무엇이 일어났는지 관측하기 위해서 각각의 방법을 가진다. 이미 다룬 **XPENDING**은 유휴 시간과 전송 회수와 함께 주어진 순간에 처리중인 메시지의 리스트를 검사하게 해준다.
 
-However we may want to do more than that, and the **XINFO** command is an observability interface that can be used with sub-commands in order to get information about streams or consumer groups.
+그러나 우리는 그보다 더 많은 것들을 조사할 수 있기를 원할지도 모르며, **XINFO** 커맨드는 스트림이나 컨슈머 그룹에 대한 정보를 얻기 위해 서브 커맨드와 함께 사용될 수 있는 관측가능한  인터페이스이다.
 
-This command uses subcommands in order to show different information about the status of the stream and its consumer groups. For instance **XINFO STREAM <key>** reports information about the stream itself.
+이 커맨드는 스트림과 컨슈머의 상태에 대해 각각 다른 정보를 보여주기 위해 서브 커맨드를 사용한다. 예를 들어, **XINFO STREAM <key>** 는 스트림 자체에 대한 정보를 보고한다.
 
 ```
 > XINFO STREAM mystream
@@ -418,7 +418,7 @@ This command uses subcommands in order to show different information about the s
        2) "banana"
 ```
 
-The output shows information about how the stream is encoded internally, and also shows the first and the last message in the stream. Another information available is the number of consumer groups associated with this stream value. We can dig further asking for more information about the consumer groups.
+이 출력 결과는 어떻게 스트림이 내부적으로 인코딩되었는지에 대한 정보를 보여주고, 또한 스트림내의 첫 번째와 마지막 메시지를 보여준다. 사용할 수 있는 또 다른 정보는 이 스트림의 값과 관련된 컨슈머 그룹의 수이다. 우리는 컨슈머 그룹에 대한 더 많은 정보를 요청함으로써 더 파헤칠 수 있다.
 
 ```
 > XINFO GROUPS mystream
@@ -436,9 +436,9 @@ The output shows information about how the stream is encoded internally, and als
    6) (integer) 0
 ```
 
-As you can see in this and in the previous output, the **XINFO** command outputs a sequence of field-value items. Because it is an observability command this allows the human user to immediately understand what information is reported, and allows the command to report more information in the future by adding more fields without breaking the compatibility with older clients. Other commands that must be more bandwidth efficient instead, like **XPENDING**, just report the information without the field names.
+이번과 지난 출력 결과에서 볼 수 있듯이, **XINFO** 커맨드는 일련의 필드-값 아이템을 출력한다. 관측 가능한 커맨드이기 때문에, 이것은 무슨 정보가 보고되는지 사람이 즉시 이해할 수 있도록 해주고,  오래된 클라이언트와의 호환성을 헤치지 않고 더 많은 필드를 추가함으로써 미래에는 더 많은 정보를 보고할 수 있도록 해준다. 이외의 커맨드들은 대신 더 효율적으로 대역폭을 사용해야하는 이외의 커맨드들은 단지 필드명 없는 정보만을 보고하면 된다.
 
-The output of the example above, where the **GROUPS** subcommand is used, should be clear observing the field names. We can check more in detail the state of a specific consumer group by checking the consumers that are registered in such group.
+**GROUPS** 서브 커맨드가 사용된 위 예의 출력 결과에서 필드명을 명확히 관찰해야 한다. 해당 컨슈머 그룹에 등록된 컨슈머를 체크함으로써 지정한 컨슈머 그룹의 상태의 더욱 상세하게 체크할 수 있다.
 
 ```
 > XINFO CONSUMERS mystream mygroup
@@ -456,7 +456,7 @@ The output of the example above, where the **GROUPS** subcommand is used, should
    6) (integer) 83841983
 ```
 
-In case you do not remember the syntax of the command, just ask the command itself for help:
+이러한 경우 커맨드의 문법을 기억하지 못한다면, 커맨드 자신에 도움을 요청하라:
 
 ```
 > XINFO HELP
@@ -469,24 +469,23 @@ In case you do not remember the syntax of the command, just ask the command itse
 
 ## Differences with Kafka (TM) partitions
 
-Consumer groups in Redis streams may resemble in some way Kafka (TM) partitioning-based consumer groups, however note that Redis streams are practically very different. The partitions are only *logical* and the messages are just put into a single Redis key, so the way the different clients are served is based on who is ready to process new messages, and not from which partition clients are reading. For instance, if the consumer C3 at some point fails permanently, Redis will continue to serve C1 and C2 all the new messages arriving, as if now there are only two *logical* partitions.
+레디스 스트림의 컨슈머 그룹은 어떠한 형태로 Kafka (TM)의 파티셔닝 기반의 컨슈머 그룹과 닮았을지도 모른다. 하지만 레디스 스트림은 실질적으로 매우 다르다는 것을 참고하라. 파티션은 오직 *논리적(logical)* 이고, 메시지는 단지 하나의 레디스 키에 입력되며, 각각 다른 클라이언트로 제공되는 방법은 어떠한 컨슈머가 새로운 메시지를 처리할 준비가 되었는지에 기반하지, 어떤 파티션 클라이언트가 읽고 있는지는 아니다. 예를 들어, 컨슈머 C3이 어느 시점에 영구적으로 실패하면, 레디스는 이제 2개의 *논리적(logical)*인 파티션만 있는 것처럼, C1과 C2로 도착하는 모든 메시지를 계속해서 전달할 것이다.
 
-Similarly, if a given consumer is much faster at processing messages than the other consumers, this consumer will receive proportionally more messages in the same unit of time. This is possible since Redis tracks all the unacknowledged messages explicitly, and remembers who received which message and the ID of the first message never delivered to any consumer.
+마찬가지로, 주어진 컨슈머가 메시지를 처리하는데에 있어 다른 컨슈머보다 훨씬 빠르다면, 이 컨슈머는 동일한 시간 단위 내에서 비례적으로 더 많은 메시지를 받을 것이다. 이것은 레디스가 명시적으로 수신 통지를 받지 못한 모든 메시지를 추적하고, 어떤 컨슈머가 어떤 메시지를 받았는지와 어떤 컨슈머로도 전달된 적이 없는 첫 번째 메시지의 ID를 기억하기 때문이 가능하다.
 
-However, this also means that in Redis if you really want to partition messages in the same stream into multiple Redis instances, you have to use multiple keys and some sharding system such as Redis Cluster or some other application-specific sharding system. A single Redis stream is not automatically partitioned to multiple instances.
+그러나, 이것은 또한 의미한다. 레디스에서 동일한 스트림의 메시지를 여러 레디스 인스턴스로 파티션하기를 원한다면, 여러 개의 키와, 레디스 클러스터(Redis Cluster)나 어플리케이션 특정(application-specific) 샤딩과 같은 샤딩 시스템을 이용해야 한다. 단일 레디스 스트림은 여러 인스턴스로 자동으로 파티션되지 않는다.
 
-We could say that schematically the following is true:
+도식적으로 다음과 같은 것이 사실이라고 말할 수 있다.
 
-* If you use 1 stream -> 1 consumer, you are processing messages in order.
-* If you use N streams with N consumers, so that only a given consumer hits a subset of the N streams, you can scale the above model of 1 stream -> 1 consumer.
-* If you use 1 stream -> N consumers, you are load balancing to N consumers, however in that case, messages about the same logical item may be consumed out of order, because a given consumer may process message 3 faster than another consumer is processing message 4.
+* 스트림 하나와 컨슈머 하나를 사용한다면, 메시지를 순서대로 처리할 것이다.
+* N개의 스트림을 N개의 컨슈머와 함께 사용한다면, 그래서 오직 하나의 컨슈머만 N개의 스트림의 서브셋에 히트하도록 하면, 위의 `1 stream -> 1 consumer` 모델을 확장할 수 있다.
+* 하나의 스트림을 N개의 컨슈머로 처리하면, N개의 컨슈머로 로드 밸런싱할 수 있다. 하지만 이러한 경우, 동일한 논리적인 아이템에 대한 메시지는 순서와 상관없이 소비될 것이다. 주어진 컨슈머는 메시지 3를 다른 컨슈머가 처리중인 메시지 4보다 빠르게 처리할지도 모른다.
 
-So basically Kafka partitions are more similar to using N different Redis keys.
-While Redis consumer groups are a server-side load balancing system of messages from a given stream to N different consumers.
+그래서 기본적으로 카프카 파티션은 N개의 레디스 키를 이용하는 것과 좀 더 비슷하다. 반면에, 레디스 컨슈머 그룹은 메시지를 주어진 스트림 하나로부터 N개의 각각의 컨슈머들로 보내는, 메시지의 서버사이드 로드밸런싱 시스템이다.
 
 ## Capped Streams
 
-Many applications do not want to collect data into a stream forever. Sometimes it is useful to have at maximum a given number of items inside a stream, other times once a given size is reached, it is useful to move data from Redis to a storage which is not in memory and not as fast but suited to take the history for potentially decades to come. Redis streams have some support for this. One is the **MAXLEN** option of the **XADD** command. This option is very simple to use:
+많은 어플리케이션은 스트림으로 데이터를 영원히 수집하기를 원하지 않을 것이다. 때때로 스트림내의 최대 아이템 개수를 가지는 것이 유용하며, 다른 시점에 최대 사이즈에 도달한다면, 데이터를 레디스로부터 메모리가 아니라 그 만큼 빠르지는 않지만, 잠재적으로 십여년이 될 수도 있는 히스토리를 저장하는데 적합한 스토리지로 옮기는 것이 유용하다. 레디스 스트림은 이를 위한 몇 가지를 지원한다. 하나는 **XADD** 커맨드의**MAXLEN** 옵션이다. 이 옵션을 사용하는 것은 매우 단순한다:
 
 ```
 > XADD mystream MAXLEN 2 * value 1
@@ -506,9 +505,9 @@ Many applications do not want to collect data into a stream forever. Sometimes i
       2) "3"
 ```
 
-Using **MAXLEN** the old entries are automatically evicted when the specified length is reached, so that the stream is taken at a constant size. There is currently no option to tell the stream to just retain items that are not older than a given amount, because such command, in order to run consistently, would have to potentially block for a lot of time in order to evict items. Imagine for example what happens if there is an insertion spike, then a long pause, and another insertion, all with the same maximum time. The stream would block to evict the data that became too old during the pause. So it is up to the user to do some planning and understand what is the maximum stream length desired. Moreover, while the length of the stream is proportional to the memory used, trimming by time is less simple to control and anticipate: it depends on the insertion rate that is a variable often changing over time (and when it does not change, then to just trim by size is trivial).
+**MAXLEN**을 사용하면, 지정된 길이에 도달될 때, 오래된 엔트리는 자동으로 제거된다. 따라서 스트림은 일정한 사이즈를 유지한다. 현재는 스트림이 지정된 것보다 더 오래되지 않은 아이템만을  유지하게 하는 옵션이 없기 때문에, 일관성있게 실행되기 위한 이러한 커맨드는 아이템을 제거하기 위해서 많은 시간동안 블로킹을 해야한다. 예를 들어, 입력에 대한 스파이크가 있어, 오랜 시간 동안 멈추고, 또 다른 입력 모두 동일한 최대 시간이 걸린다면 무슨 일이 일어날지 상상해보자. 스트림은  멈춰있는 동안 너무 오래되어 버린 데이터를 제거하기 위해 블록할 것이다. 그래서 이것은 유저가 어떤 계획을 실행하고, 이상적인 스트림의 최대 길이가 무엇인지 이해하는 것에 달려있다. 게다가, 스트림의 길이는 메모리의 사용에 비례하기 때문에, 시간에 의한 트림은 제어와 예측이 덜 간단하다: 입력 비율에 달려있다. 그 비율은 종종 시간에 따라 변하는 변수이다 (그리고 변경이 없다면, 사이즈에 따라 트림하는 것은 간단한 일이다).
 
-However trimming with **MAXLEN** can be expensive: streams are represented by macro nodes into a radix tree, in order to be very memory efficient. Altering the single macro node, consisting of a few tens of elements, is not optimal. So it is possible to give the command in the following special form:
+그러나 **MAXLEN**으로 트림을 하는 것은 비용이 크다: 스트림은 매우 메모리를 효율적으로 사용하기 위해 매크로(macro) 노드에서 radix 트리로 표현한다. 수십개의 엘리먼트로 구성되는 단일 매크로 노드를 변경하는 것은 최적이 아니다. 그래서 다음과 같이 특별한 형태로 커맨드를 실행하는 것이 가능하다:
 
 ```
 XADD mystream MAXLEN ~ 1000 * ... entry fields here ...
