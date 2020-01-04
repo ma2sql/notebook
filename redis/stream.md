@@ -513,53 +513,52 @@ Client 2: XCLAIM mystream mygroup Lora 3600000 1526569498055-0
 XADD mystream MAXLEN ~ 1000 * ... entry fields here ...
 ```
 
-The `~` argument between the **MAXLEN** option and the actual count means, I don't really need this to be exactly 1000 items. It can be 1000 or 1010 or 1030, just make sure to save at least 1000 items. With this argument, the trimming is performed only when we can remove a whole node. This makes it much more efficient, and it is usually what you want.
+**MAXLEN** 옵션과 실제 개수 사이의 `~` 인수는 정확히 1000개의 아이템일 필요는 없다는 것을 의미한다. 1000이나 1010, 1030이 될 수 있으며, 적어도 1000개의 아이템을 보존하도록 한다. 이 인수를 사용한 트림은 노드 전체를 삭제할 수 있을때만 수행된다. 이것은 훨씬 더 효율적으로 만들어주며, 보통 사람들이 원하는 것이다.
 
-There is also the **XTRIM** command available, which performs something very similar to what the **MAXLEN** option does above, but this command does not need to add anything, it can be run against any stream in a standalone way.
+**XTRIM**도 사용가능한데, 이 커맨드는 위에서 **MAXLEN**을 사용한 것과 매우 비슷한 무언가를 수행하지만, 어떠한 것도 입력할 필요가 없으며, 독립적으로 어떠한 스트림에 대해서도 실행될 수 있다.
 
 ```
 > XTRIM mystream MAXLEN 10
 ```
 
-Or, as for the **XADD** option:
+또는, **XADD**의 옵션처럼:
 
 ```
 > XTRIM mystream MAXLEN ~ 10
 ```
 
-However, **XTRIM** is designed to accept different trimming strategies, even if currently only **MAXLEN** is implemented. Given that this is an explicit command, it is possible that in the future it will allow to specify trimming by time, because the user calling this command in a stand-alone way is supposed to know what she or he is doing.
+그러나, **XTRIM**은 다른 트림 전략을 받아들일 수 있도록 설계되었다. 하지만 현재까지는 **MAXLEN**만 구현되었다. 이것이 명시적으로 커맨드라는 것을 고려할 때, 향후에는 시간에 의한 트림도 가능해질 것이다. 왜냐하면 독립적인 방식으로 이 커맨드를 호출하는 사용자는 자신이 무엇을 하고 있는지 알고 있기 때문이다.
 
-One useful eviction strategy that **XTRIM** should have is probably the ability to remove by a range of IDs. This is currently not possible, but will be likely implemented in the future in order to more easily use **XRANGE** and **XTRIM** together to move data from Redis to other storage systems if needed.
+**XTRIM**이 가져야하는 유용한 제거(eviction)전략 중 하나는, 아마도 ID의 범위로 삭제하는 능력일 것이다. 현재는 가능하지는 않지만, 필요한 경우에 레디스로부터 다른 스토리지 시스템으로 데이터를 옮겨야 할 때, 좀 더 쉽게 **XRANGE**와 **XTRIM**을 함께 사용하기 위해 향후에는 이러한 기능이 구현될 것이다. 
 
 ## Special IDs in the streams API
 
-You may have noticed that there are several special IDs that can be
-used in the Redis streams API. Here is a short recap, so that they can make more
-sense in the future.
+알아차렸을지도 모르지만, 레디스 스트림 API에서 사용될 수 있는몇 가지 특별한 ID가 있다. 여기에 짦은 개요가 있고, 미래에는 좀 더 많은 것들을 이해할 수 있을 것이다.
 
-The first two special IDs are `-` and `+`, and are used in range queries with the `XRANGE` command. Those two IDs respectively mean the smallest ID possible (that is basically `0-1`) and the greatest ID possible (that is `18446744073709551615-18446744073709551615`). As you can see it is a lot cleaner to write `-` and `+` instead of those numbers.
+첫째, `-`와 `+`는 `XRANGE`와 함께 범위 쿼리에 사용된다. 이 두개의 ID는 대표적으로 사용이 가능한 가장 작은 ID(기본적으로 `0-1`)와 가장 큰 ID(`18446744073709551615-18446744073709551615`)를 의미한다. 여기서 볼 수 있듯이, 2개의 숫자 대신 `-`와 `+`를 사용하는 것이 훨씬 더 깔끔하다.
 
-Then there are APIs where we want to say, the ID of the item with the greatest ID inside the stream. This is what `$` means. So for instance if I want only new entries with `XREADGROUP` I use such ID to tell that I already have all the existing entries, but not the new ones that will be inserted in the future. Similarly when I create or set the ID of a consumer group, I can set the last delivered item to `$` in order to just deliver new entries to the consumers using the group.
+그리고 나서 우리가 이야기하고 싶은 API가 있는데, 그것은 스트림 내에서 가장 큰 ID를 가진 아이템을 뜻하는 ID이다. `$`가 의미하는 것이 이것이다. 그래서 예를 들어, `XREADGROUP`으로 새로운 엔트리만을 얻길 원할 때, (클라이언트/어플리케이션은) 이미 존재하는 엔트리 모두를 가지고 있지만, 미래에 입력될 새로운 엔트리는 없다는 것을 알리기 위해서, 이러한 ID를 사용할 수 있을 것이다. 마찬가지로 컨슈머 그룹의 ID를 설정하거나 생성할 때, 그룹내의 컨슈머로 새로운 엔트리만 전달하기 위해서, 가장 최근에 전달된 아이템을 `$`로 설정할 수 있다.
 
-As you can see `$` does not mean `+`, they are two different things, as `+` is the greatest ID possible in every possible stream, while `$` is the greatest ID in a given stream containing given entries. Moreover APIs will usually only understand `+` or `$`, yet it was useful to avoid loading a given symbol with multiple meanings.
+위에서 볼 수 있듯이, `$`는 `+`를 의미하지는 않는데, 여기에는 2가지 차이점이 있다. `+`는 모든 사용 가능한 모든 스트림내에서 사용 가능한 가장 큰 ID를 의미하고, 반면 `$`는 주어진 엔트리를 포함하는 주어진 스트림내에서 가장 큰 ID를 의미한다. 게다가 API는 보통 `+`나 `$`만을 이해하는데, 아직은 여러 의미를 지닌 심볼이 되는 것은 피하는 것이 유용하다.
 
-Another special ID is `>`, that is a special meaning only related to consumer groups and only when the `XREADGROUP` command is used. Such special ID means that we want only entries that were never delivered to other consumers so far. So basically the `>` ID is the *last delivered ID* of a consumer group.
+또 다른 특별 ID `>`는 오직 컨슈머 그룹하고만 연관이 있고, `XREADGROUP` 커맨드가 사용될 때만 특별한 의미를 가진다. 이러한 특별 ID는 현재까지 다른 컨슈머로 전달된 적이 없는 엔트리만을 의미한다. 따라서 기본적으로 `>` ID는 컨슈머 그룹 내에서 *마지막으로 전달된 ID(last delivered ID)* 이다.
 
-Finally the special ID `*`, that can be used only with the `XADD` command, means to auto select an ID for us for the new entry.
+마지막으로 특별 ID `*`는 오직 `XADD` 커맨드와 함께 사용될 수 있으며, 새로운 엔트리에 대한 ID를 자동으로 선택하는 것을 의미한다.
 
-So we have `-`, `+`, `$`, `>` and `*`, and all have a different meaning, and most of the times, can be used in different contexts.
+`-`, `+`, `$`, `>`, `*`는 각각 다른 것을 의미하며, 대부분의 상황에 각각 다른 컨텍스트에서 사용될 수 있다.
 
 ## Persistence, replication and message safety
 
-A Stream, like any other Redis data structure, is asynchronously replicated to slaves and persisted into AOF and RDB files. However what may not be so obvious is that also consumer groups full state is propagated to AOF, RDB and slaves, so if a message is pending in the master, also the slave will have the same information. Similarly, after a restart, the AOF will restore the consumer groups state.
+레디스 자료 구조와 같이, 하나의 스트림은 비동기적으로 슬레이브로 복제되고, AOF와 RDB로 영구 저장된다. 그러나 명확하지 않을 수도 있는 것은, 컨슈머 그룹의 전체 상태 또한 AOF나 RDB, 슬레이브로 되므로, 만약 마스터에서 메시지가 보류중이면, 슬레이브 또한 동일한 상태 정보를 가진다는 것이다. 마찬가지로, 재시작 이후에 AOF는 컨슈머 그룹 상태를 복원할 것이다.
 
 However note that Redis streams and consumer groups are persisted and replicated using the Redis default replication, so:
+그러나 레디스 스트림과 컨슈머 그룹은 영구적으로 저장되고, 레디스의 기본 리플리케이션을 사용해서 복제될 것이라는 것을 참고하라. 그래서:
 
-* AOF must be used with a strong fsync policy if persistence of messages is important in your application.
-* By default the asynchronous replication will not guarantee that **XADD** commands or consumer groups state changes are replicated: after a failover something can be missing depending on the ability of slaves to receive the data from the master.
-* The **WAIT** command may be used in order to force the propagation of the changes to a set of slaves. However note that while this makes it very unlikely that data is lost, the Redis failover process as operated by Sentinel or Redis Cluster performs only a *best effort* check to failover to the slave which is the most updated, and under certain specific failures may promote a slave that lacks some data.
+* 만약 메시지의 영속성이 어플리케이션에 있어서 중요하다면, AOF는 반드시 엄격한 fsync 정책과 함께 사용되어야 한다.
+* 기본적으로 비동기 리플리케이션은 **XADD** 커맨드나 컨슈머 그룹이 상태 변경이 복제되는 것을 보장하지는 않을 것이다: 페일 오버 이후에, 마스터로부터 데이터를 전달받는 슬레이브의 능력에 따라서 무언가를 잃어버릴 수도 있다.
+* 변경 사항이 슬레이브로 전파되는 것을 강제하기 위해서 **WAIT** 커맨드가 사용될 수 있다. 하지만 이것은 데이터가 손실될 가능성이 매우 낮아지는 반면에, 센티널이나 클러스터에 의해 수행되는 레디스 페일오버 프로세스는 가장 최신의 데이터를 가지는 슬레이브로 페일오버시키기 위해서 *최선의 노력(best effort)*으로 체크만을 수행하고, 특정한 페일 상황에서는 일부 데이터의 누락이 있는 슬레이브를 승격시킬지도 모른다.
 
-So when designing an application using Redis streams and consumer groups, make sure to understand the semantical properties your application should have during failures, and configure things accordingly, evaluating if it is safe enough for your use case.
+그래서 레디스 스트림과 컨슈머 그룹을 사용한 어플리케이션을 설계할 때에는, 실패(장애)동안에 당신의 어플리케이션이 가져야 하는 의미적인 특성을 확실히 이해하고, 적절히 구성해야하며, 당신의 유즈 케이스(use case)가 충분히 안전한지를 평가해야한다.
 
 ## Removing single items from a stream
 
