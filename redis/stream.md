@@ -2,58 +2,14 @@
 tags: [redis, stream]
 ---
 
-## Streams Basics
-
-- 스트림은 기본적으로 append only 자료구조
-- 기본적으로 데이터를 쓰기 위한 명령은 `XADD` (엔트리 추가)
-- 스트림의 엔트리는 키-값 의 형태
-
-```
-# XADD key ID field value [field value ...]
-> XADD mystream * sensor-id 1234 temperature 19.8
-1518951480106-0
-```
-- `XADD`는 키와 함께 ID, 그리고 field-value의 엔트리 값을 전달해야한다.
-- 위의 예제에서는 키의 ID로서 `*`를 전달하였는데, 이것은 레디스 서버에게 엔트리 ID의 생성을 맡기는 것이다.
-- ID는 로그 파일의 라인 넘버 또는 파일의 오프셋과 같은 역할을 한다.
-- `XLEN` 커맨드로는 스트림의 길이를 알 수 있다.
-```
-> XLEN mystream
-(integer) 1
-```
-
-### Entry IDs
-- 각각의 엔트리를 명확히 구분하는 ID로, 다음과 같이 밀리초 단위의 시간과 시퀀스 번호로 이루어진다.
-```
-<millisecondsTime>-<sequenceNumber>
-```
-- 밀리초 단위의 시간은 로컬 레디스가 생성하는 것으로, 이전 엔트리보다 작을 가능성도 있다.
-- 이 때는 이전 시간을 사용하고 시퀀스 번호를 하나 더 증가시킨다.
-- 시퀀스 번호는 64bit로, 실제로 동일한 밀리초 내애서는 거의 무한한 값이다.
-- ID값으로 시간을 쓰는 것이 이상할수도 있는데, ID를 기준으로하는 범위 쿼리를 사용 가능토록 하기 위함이다. `XRANGE`
-- 사용자의 필요에 의해 자신만의 포맷의 ID를 부여할 수도 있다.
-```
-> XADD somestream 0-1 field value
-0-1
-> XADD somestream 0-2 foo bar
-0-2
-```
-- 이러한 경우에, ID값이 기존의 값과 동일하거나 더 작을 수는 없다.
-```
-> XADD somestream 0-1 foo bar
-(error) ERR The ID specified in XADD is equal or smaller than the target stream top item
-```
-
-## Getting data from Streams
-
----
 # Introduction to Redis Streams
 
-The Stream is a new data type introduced with Redis 5.0, which models a *log data structure* in a more abstract way, however the essence of the log is still intact: like a log file, often implemented as a file open in append only mode, Redis streams are primarily an append only data structure. At least conceptually, because being Redis Streams an abstract data type represented in memory, they implement more powerful operations, to overcome the limits of the log file itself.
+스트림은 레디스 5.0에서 도입된 새로운 데이터 타입이고, 좀 더 추상적인 방법으로 *로그 자료 구조(log data structure)*를 모델링한다. 하지만 로그의 본질은 여전히 남아 있다: 종종 추가 전용 모드의 열린 파일과 같이 구현되는 로그 파일처럼, 레디스 스트림은 주로 추가만 가능한 자료 구조이다. 최소한 개념적으로 레디스 스트림은 메모리에서 표현되는 추상적인 데이터 타입이기 때문에, 로그 파일 그 자체의 한계를 극복하기 위해 좀 더 강력한 오퍼레이션을 구현한다.
 
-What makes Redis streams the most complex type of Redis, despite the data structure itself being quite simple, is the fact that it implements additional, non mandatory features: a set of blocking operations allowing consumers to wait for new data added to a stream by producers, and in addition to that a concept called **Consumer Groups**.
+자료 구조 그 자체는 매우 단순함에도 불구하고, 레디스 스트림이 가장 복잡한 레디스의 타입인 이유는
+추가적이고, 필수적이지 않은 기능을 구현하기 때문이다: 프로듀서에 의해 스트림으로 새롭게 추가된 데이터를 컨슈머가 대기할 수 있도록 하는 블로킹 오퍼레이션의 집합 이외에도, **Consumer Groups**이라고 불리는 개념이 있다.
 
-Consumer groups were initially introduced by the popular messaging system called Kafka (TM). Redis reimplements a similar idea in completely different terms, but the goal is the same: to allow a group of clients to cooperate consuming a different portion of the same stream of messages.
+컨슈머 그룹은 Kafka (TM)이라고 불리는 유명한 메시지 시스템에 의해 처음 도입되었다. 레디스는 완전히 다른 용어로 비슷한 아이디어를 다시 구현하였지만, 목표는 동일하다: 클라이언트의 그룹이 동일한 메시지의 스트림의 각각의 부분을 소비할 수 있도록 협력하게 하는 것이다.
 
 ## Streams basics
 
@@ -115,7 +71,7 @@ Consumer groups were initially introduced by the popular messaging system called
 
 ### Querying by range: XRANGE and XREVRANGE
 
-To query the stream by range we are only required to specify two IDs, *start* and *end*. The range returned will include the elements having start or end as ID, so the range is inclusive. The two special IDs `-` and `+` respectively means the smallest and the greatest ID possible.
+범위로 스트림에 쿼리하는 것은 *start*와 *end*, 두 개의 ID의 저정만 필요로 한다. 반환되는 범위는 시작이나 끝의 ID를 가지는 엘리먼트를 포함하고, 따라서 범위는 포괄적이다. 두 개의 특별한 ID `-`와 `+`는 대표적으로 사용 가능한 ID중, 가장 작은 값과 가장 큰 값을 의미한다.
 
 ```
 > XRANGE mystream - +
@@ -131,8 +87,7 @@ To query the stream by range we are only required to specify two IDs, *start* an
       4) "18.2"
 ```
 
-Each entry returned is an array of two items: the ID and the list of field-value pairs. We already said that the entry IDs have a relation with the time, because the part at the left of the `-` character is the Unix time in milliseconds of the local node that created the stream entry, in the moment the entry was created (however note that Streams are replicated with fully specified **XADD** commands, so the slaves will have identical IDs to the master). This means that I could query a range of time using **XRANGE**. In order to do so, however, I may want to omit the sequence part of the ID: if omitted, in the start of the range it will be assumed to be 0, while in the end part it will be assumed to be the maximum sequence number available. This way, querying using just two milliseconds Unix times, we get all the entries that were generated in that range of time, in an inclusive way. For instance, I may want to query a two milliseconds period I could use:
-
+각 엔트리는 두 개의 아이템의 배열을 반환했다: ID와 그리고 필드-값 쌍의 리스트이다. 우리는 이미 엔트리 ID가 시간과 관계를 가진다는 것을 언급했는데, `-` 문자의 왼쪽 부분이 스트림 엔트리를 생성한 로컬 노드의 유닉스 시간(밀리초)이며, 그 시간은 엔트리가 생성된 시간이다. (그러나 스트림이 완전히 (옵션이) 지정된 **XADD** 커맨드로 복제된다. 따라서 슬레이브는 마스터와 동일한 ID를 가진다.)이것은 **XRANGE**를 이용해서 시간의 범위로 쿼리할 수 있다는 것을 의미한다. 그렇게 하기 위해서, 하지만 ID 부분의 시퀀스를 생략하고 싶을 수 있는데: 만약 생략되면, 범위의 시작은 0으로 가정될 것이고, 반면에 마지막 부분은 사용 가능한 최대 시퀀스라고 가정될 것이다. 이러한 방법으로, 밀리초의 유닉스 시간을 2개만은 사용하여 쿼리하는 것으로, 그 시간 범위 안에서 생성된 모든 엔트리를 포괄적인 방식으로 얻을 수 있다. 예를 들어, 사용할 수 있는 2밀리초의 간격으로 쿼리할 것이다.
 ```
 > XRANGE mystream 1518951480106 1518951480107
 1) 1) 1518951480106-0
@@ -142,7 +97,7 @@ Each entry returned is an array of two items: the ID and the list of field-value
       4) "19.8"
 ```
 
-I have only a single entry in this range, however in real data sets, I could query for ranges of hours, or there could be many items in just two milliseconds, and the result returned could be huge. For this reason, **XRANGE** supports an optional **COUNT** option at the end. By specifying a count, I can just get the first *N* items. If I want more, I can get the last ID returned, increment the sequence part by one, and query again. Let's see this in the following example. We start adding 10 items with **XADD** (I'll not show that, already assume that the stream `mystream` was populated with 10 items). To start my iteration, getting 2 items per command, I start with the full range, but with a count of 2.
+이 시간 범위에서는 하나의 엔트리만을 얻었는데, 하지만 실제 데이터 셋에서는 시간의 범위로 쿼리하거나, 2밀리초 내에 많은 아이템이 있을 수 있고, 반환되는 결과는 매우 클수도 있다. 이러한 이유로, **XRANGE**는 끝 부분에 위치하는, 선택적 옵션인 **COUNT** 를 지원한다. 개수를 지정함으로써, 첫 *N*개의 아이템만을 얻을 수 있다. 만약 좀 더 많은 결과를 원한다면, 반환된 마지막 ID를 얻을 수 있을 것이고, 시퀀스 부분을 1 증가시키고, 다시 쿼리를 한다. 다음의 예에서 이것을 보자. 10개의 아이템을 **XADD**로 추가를 시작한다. (이것을 보여주지는 않으며, 이미 `mystream`은 10개의 아이템을 가지고 있다고 가정한다.) 커맨드당 2개의 아이템을 얻는 반복을 시작하기 위해, 우선 전체 범위로 시작하고, count는 2로 지정한다.
 
 ```
 > XRANGE mystream - + COUNT 2
@@ -154,7 +109,7 @@ I have only a single entry in this range, however in real data sets, I could que
       2) "value_2"
 ```
 
-In order to continue the iteration with the next two items, I have to pick the last ID returned, that is `1519073279157-0` and add 1 to the sequence number part of the ID. Note that the sequence number is 64 bit so there is no need to check for overflows. The resulting ID, that is `1519073279157-1` in this case, can now be used as the new *start* argument for the next **XRANGE** call:
+다음 두 아이템에 대한 반복을 계속하기 위해, 앞서 반환된 마지막 ID `1519073279157-0`를 선택하고, ID의 시퀀스 부분을 1 증가시킨다. 시퀀스 번호는 64비트이므로, 오버플로우에 대한 체크는 필요하지 않다. 이러한 경우 요청하는 ID는 `1519073279157-1`이고, 다음 **XRANGE** 호출에 대한 새로운 *start* 인수로 사용될 수 있다:
 
 ```
 > XRANGE mystream 1519073279157-1 + COUNT 2
@@ -166,9 +121,9 @@ In order to continue the iteration with the next two items, I have to pick the l
       2) "value_4"
 ```
 
-And so forth. Since **XRANGE** complexity is *O(log(N))* to seek, and then *O(M)* to return M elements, with a small count the command has a logarithmic time complexity, which means that each step of the iteration is fast. So **XRANGE** is also the de facto *streams iterator* and does not require an **XSCAN** command.
+**XRANGE**의 복잡도는 탐색에 대해서는 *O(log(N))*, 그리고 M개의 엘리먼트를 반환에 대해서는 *O(M)* 이다. 작은 수로 실행되는 커맨드는 로그 시간 복잡도를 가지며, 각각의 반복의 단계는 빠르다. 그래서 **XRANGE**는 사실상의 *streams iterator*이고, **XSCAN** 커맨드가 필요하지 않다.
 
-The command **XREVRANGE** is the equivalent of **XRANGE** but returning the elements in inverted order, so a practical use for **XREVRANGE** is to check what is the last item in a Stream:
+이 커맨드 **XREVRANGE**는 **XRANGE**와 동일하지만, 엘리먼트를 역순으로 반환한다. 그래서 실제적인 사용 용도는 **XREVRANGE**는 스트림 내의 마지막 아이템이 무엇인지 체크하기 위한 것이다:
 
 ```
 > XREVRANGE mystream + - COUNT 1
@@ -177,16 +132,17 @@ The command **XREVRANGE** is the equivalent of **XRANGE** but returning the elem
       2) "value_10"
 ```
 
-Note that the **XREVRANGE** command takes the *start* and *stop* arguments in reverse order.
-
+**XREVRANGE** 커맨드는 *start*와 *stop* 인수를 역순으로 받는 것을 유의하라.
 
 ## Listening for new items with XREAD
-1. 스트림에 새로운 엔트리가 추가된 것을 하나 이상의 컨슈머는 전달받을 수 있다.
-    - LIST의 Blocking API와 비슷하나, 하나 이상의 컨슈머로의 통지는 Pub/Sub과 유사하다.
-2. 모든 메시지가 스트림별로 개별적으로 쌓이기 때문에, 각각의 컨슈머는 자신이 기억하는 ID를 기준으로 새로운 ID를 판별해낼 수 있다.
-3. 스트림 컨슈머 그룹 (Streams Consumer Groups)은 동일한 스트림에 대해 각각 다른 컨슈머 그룹을 가지는 것이 가능하다.
 
-`XREAD`가 이러한 것들을 도와준다.
+스트림 내의 아이템을 범위로 접근하는 것을 원치 않을 때, 보통은 대신 스트림으로 도착한 새로운 아이템을 *구독(subscribe)* 할 수 있기를 원할 것이다. 이 컨셉은 레디스의 Pub/Sub이나 채널을 구독하거나 레디스의 블로킹 리스트, 새로운 엘리먼트를 패치하기 위해 키를 대기하는 레디스의 블로킹 리스트와 관련이 있어 보이지만, 스트림을 소비하는 방법에는 근본적인 차이가 있다:
+
+1. 스트림은 데이터를 기다리는 여러 (컨슈머) 클라이언트를 가질 수 있다. 모든 새로운 아이템은 기본적으로 주어진 스트림내에서 데이터를 기다리는 *모든 컨슈머(every consumer)* 에게 전달된다. 이러한 동작은 각각의 컨슈머가 다른 엘리먼트를 얻는 블로킹 리스트와는 다르다. 하지만 여러 컨슈머로 *fan out*할 수 있는 능력은 Pub/Sub과 비슷하다.
+2. Pub/Sub에서 메시지가 *fire and forget(발송하고 지우는?)*과 절대 저장되지 않는, 그리고 블로킹 리스트를 사용할 때, 클라이언트에 의해 수신되는 메시지를 리스트로부터 **꺼내어지는(popped)** (효과적으로 삭제되는) 반면에, 스트림은 근본적으로 다른 방식으로 동작한다. 모든 메시지는 스트림 내에서 무한으로 (뒤로) 추가된다 (사용자가 명시적으로 엔트리들의 삭제를 요청하지 않는다면): 각각의 컨슈머는 마지막으로 수신한 ID를 기억함으로써, 새로운 메시지가 무엇인지를 알 수 있을 것이다.
+3. 스트림 컨슈머 그룹은 Pub/Sub이나 블로킹 리스트로는 얻을 수 없는 제어의 레벨을 제공한다. 동일한 스트림을 각각 다른 그룹으로, 처리한 아이템의 명시적인 수신 통보, 보류중인 아이템을 검사할 수 있는 능력, 처리되지 않은 메시지의 소유권을 변경, 각각의 단일 클라이언트에 대해 개별적인 메시지의 지난 히스토리만 볼 수 있는, 일관성있는 히스토리의 가시성 등이 바로 그것이다.
+
+이 커맨드는 스트림으로 도착하는 새로운 메시지의 수신을 대기하는 기능을 제공하며, 이를 **XREAD**라고 부른다. **XRANGE**보다는 조금 더 복잡해서, 단순한 양식부터 보여주기 시작할 것이고, 이후에는 전체 커맨드 레이아웃을 보여줄 것이다.
 
 ```
 > XREAD COUNT 2 STREAMS mystream 0
