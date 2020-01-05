@@ -46,6 +46,140 @@ tags: [redis, stream]
 
 ## Getting data from Streams
 
+---
+# Introduction to Redis Streams
+
+The Stream is a new data type introduced with Redis 5.0, which models a *log data structure* in a more abstract way, however the essence of the log is still intact: like a log file, often implemented as a file open in append only mode, Redis streams are primarily an append only data structure. At least conceptually, because being Redis Streams an abstract data type represented in memory, they implement more powerful operations, to overcome the limits of the log file itself.
+
+What makes Redis streams the most complex type of Redis, despite the data structure itself being quite simple, is the fact that it implements additional, non mandatory features: a set of blocking operations allowing consumers to wait for new data added to a stream by producers, and in addition to that a concept called **Consumer Groups**.
+
+Consumer groups were initially introduced by the popular messaging system called Kafka (TM). Redis reimplements a similar idea in completely different terms, but the goal is the same: to allow a group of clients to cooperate consuming a different portion of the same stream of messages.
+
+## Streams basics
+
+레디스 스트림이 무엇인지, 그리고 그것을 어떻게 사용하는지 이해하고자 하는 목표를 위해, 우리는 모든 고급 기능들은 무시할 것이고, 대신 자료 구조 그 자체와 조작하고 접근하기 위해 사용되는 커맨드의 측면에 포커스를 맞출 것이다. 이것은 기본적으로 리스트, 셋, 정렬된 셋 등등과 같이 레디스 데이터 타입의 대다수와 공통적인 부분이다. 그러나 리스트 또한 **BLPOP** 등등과 같은 커맨드에 의해 내보내어지는, 좀 더 복잡한 선택적 블로킹 API 옵션을 가지고 있다는 것을 유의해야한다. 그래서 스트림은 이러한 점에서는 리스트보다 크게 다르지 않고, 단지 추가적인 API가 더 복잡하고, 더 강력하다.
+
+스트림은 추가만 가능한 자료 구조이기 때문에, **XADD**라고 불리는 기본적인 쓰기 커맨드는 새로운 엔트리를 지정된 스트림으로 추가한다. 스트림 엔트리는 단순히 문자열이 아니라, 대신 하나 이상의 필드-값의 쌍으로 구성된다. 이러한 방법으로, 여러 개로 나뉘어진 필드가 각 라인에 표현되는 CSV 포맷으로 작성된 파일처럼, 스트림의 각 엔트리는 이미 구조화되어 있다.
+
+```
+> XADD mystream * sensor-id 1234 temperature 19.8
+1518951480106-0
+```
+
+위에서 호출하는 **XADD**커맨드는 커맨드가 반환하는 자동 생성된 엔트리 ID, 구체적으로는 `1518951480106-0`를 이용해서 `sensor-id: 1234, temperature: 19.8` 엔트리를 `mystream`키의 스트림으로 추가한다. 첫 번째 인수로 `mystream`이라는 키를 받고, 두 번째 인수로는 스트림 내에서 모든 엔트리를 식별할 수 있는 엔트리 ID를 받는다. 그러나 이러한 경우에, 우리는 `*` 를 전달할 수 있는데, 왜냐하면 서버가 자동으로 새로운 ID를 생성해주길 바라기 때문이다. 모든 새로운 ID는 단조롭게 증가하고, 그래서 좀 더 단순한 용어로, 새롭게 추가된 엔트리 모두는 모든 지난 엔트리와 비교해서 더 높은 ID를 가질 것이다. 서버에 의해 자동으로 생성된 ID들은 거의 항상 당신이 원하던 것이며, 그리고 명시적으로 지정한 ID에 대한 이유는 매우 드물다. 이것에 대해서는 다음에 좀 더 자세히 이야기할 것이다. 각 스트림 엔트리가 가진 ID는 여타 다른 로그 파일의 라인 번호나 파일 내의 바이트 오프셋과 유사한 것으로, 이는 엔트리를 식별하는데 사용될 수 있다. **XADD** 예제로 돌아가서, 키 이름과 ID의 뒤의 다음 인수들은 스트림 엔트리를 구성하는 필드-값 쌍들이다.
+
+**XLEN** 커맨드만을 이용해서 스트림내의 아이템의 개수를 얻는 것은 가능하다:
+
+```
+> XLEN mystream
+(integer) 1
+```
+
+### Entry IDs
+
+**XADD** 커맨드에 의해 반환되고 스트림 내에서 각 엔트리를 고유하게 식별하는 엔트리 ID는 두 개의 부분으로 구성된다:
+
+```
+<millisecondsTime>-<sequenceNumber>
+```
+
+밀리초 시간 부분은 ID를 생성하는 로컬 레디스 노드의 실제 로컬 시간이지만, 만약 현재 밀리초 시간이 이전 엔트리보다 더 작으면, 이전 엔트리 시간이 대신 사용된다. 그래서 시간이 뒤쪽으로 이동하더라도, 단조 증가하는 ID 속성은 여전히 유지한다. 이 시퀀스 번호는 동일 밀리초에서 생성된 엔트리에 대해서 사용된다. 시퀀스 번호는 64비트이며, 실질적인 상황에서 동일한 밀리초 내에서 생성되는 엔트리의 수에는 제한이 없다.
+
+이러한 ID의 포맷은 처음에는 이상하게 보일지 모르고, 점잖은 독자는 왜 ID에 시간이 있는지 궁금할 것이다. 이유는 레디스 스트림이 ID를 이용하는 범위 쿼리를 지원하기 때문이다. ID는 엔트리가 생성된 시간과 관련이 있기 때문에, 기본적으로 자유롭게 시간의 범위로 쿼리를 할 수 있게 된다. 우리는 곧 **XRANGE** 커맨드를 다루는 것을 볼 수 있을 것이다.
+
+어떤 이유로 유저가 시간과 관련이 없고 실제로 또 다른 외부 시스템의 ID와 연관되는, 증가하는 ID값이 필요하다면, 이미 앞서 본것과 같이 **XADD** 커맨드는 ID를 자동으로 생성하는 `*` 와일드카드 ID 대신에 명시적인 ID 지정할 수 있다. 다음의 예는 이것을 보여준다:
+
+```
+> XADD somestream 0-1 field value
+0-1
+> XADD somestream 0-2 foo bar
+0-2
+```
+
+이러한 경우에, 최소 ID는 0-1이고, 이전의 값보다 작거나 같은 ID 값은 받아들이지 않을 것이다:
+
+```
+> XADD somestream 0-1 foo bar
+(error) ERR The ID specified in XADD is equal or smaller than the target stream top item
+```
+
+## Getting data from Streams
+
+이제 우리는 마침내 **XADD**를 통해서 우리의 스트림에 엔트리를 추가할 수 있게 되었다. 하지만, 스트림에 데이터를 추가하는 것은 매우 명백한 반면에 스트림에서 데이터를 추출하기위해 쿼리하는 방법은 아직 명확하지 않다. 만약 아날로그 로그 파일외 비교를 계속해서 해본다면, 한가지 분명한 방법은 일반적으로 사용하는 Unix 커맨드 `tail -f`를 흉내내는 것이고, 그래서 스트림에 새롭게 추가되는 메시지를 얻기 위해 대기를 시작할 것이다. 엘리먼트가 **BLPOP**와 같은 *pop style* 오퍼레이션을 블로킹하는 단일 클라이언트에 도달하는 레디스의 블로킹 리스트 오퍼레이션과는 달리, 마치 여러 `tail -f` 프로세스가 로그에 추가되는 것을 볼 수 있듯이, 스트림을 이용해 여러 컨슈머가 스트림으로 추가되는 새로운 메시지를 볼 수 있기를 원한다. 기존의 용어를 사용해서, 우리는 스트림이 메시지를 여러 클라이언트로 *fan out* 할 수 있기를 원한다.
+
+그러나, 이것은 단지 하나의 잠재적인 액세스 모드이다. 우리는 스트림을 매우 다른 방법으로도 볼 수  있다: 메시징 시스템이 아니라, *시계열 스토어(time series store)*로써. 이러한 경우, 아마 추가되는 새로운 메시지를 얻는 것이 유용할 수도 있지만, 또 다른 자연스러운 쿼리 모드는 시간의 범위로 메시지를 얻거나, 그렇지 않으면 커서를 사용해서 모든 히스토리를 점진적으로 체크하기 위해 메시지를 반복적으러 처리할 수 있다. 이것은 분명히 또 다른 유용한 액세스 모드이다.
+
+결국, 우리가 컨슈머의 관점에서 스트림을 본다면, 스트림을 또 다른 방식으로 접근하기를 원할 수 있는데, 이것은 그러한 메시지를 처리하는 여러 컨슈머로 파티션될 수가 있는 메시지의 스트림으로써, 따라서 컨슈머의 그룹은 단일 스트림에 도착하는 메시지의 서브셋만을 볼 수 있다. 이러한 방법으로, 단일 컨슈머들들이 모든 메시지를 처리할 필요없이, 메시지의 처리를 각각의 컨슈머들로 스케일하는 것이 가능하다: 각각의 컨슈머는 단지 처리할 다른 메시지를 얻을 수 있다. 이것은 기본적으로 Kafka (TM)이 컨슈머 그룹으로 하는 것이다. 컨슈머 그룹을 통해서 메시지를 읽는 것은 레디스 스트림으로부터 데이터를 읽기 위한 매우 흥미로운 또 다른 모드이다.
+
+레디스 스트림은 각각의 다른 커맨드를 통해 위에서 설명한 3가지를 모두 지원한다. 다음 섹션에서 가장 단순하고, 좀 더 직접 사용하기 위한 범위 쿼리를 시작해서 모든 항목을 보여준다.
+
+### Querying by range: XRANGE and XREVRANGE
+
+To query the stream by range we are only required to specify two IDs, *start* and *end*. The range returned will include the elements having start or end as ID, so the range is inclusive. The two special IDs `-` and `+` respectively means the smallest and the greatest ID possible.
+
+```
+> XRANGE mystream - +
+1) 1) 1518951480106-0
+   2) 1) "sensor-id"
+      2) "1234"
+      3) "temperature"
+      4) "19.8"
+2) 1) 1518951482479-0
+   2) 1) "sensor-id"
+      2) "9999"
+      3) "temperature"
+      4) "18.2"
+```
+
+Each entry returned is an array of two items: the ID and the list of field-value pairs. We already said that the entry IDs have a relation with the time, because the part at the left of the `-` character is the Unix time in milliseconds of the local node that created the stream entry, in the moment the entry was created (however note that Streams are replicated with fully specified **XADD** commands, so the slaves will have identical IDs to the master). This means that I could query a range of time using **XRANGE**. In order to do so, however, I may want to omit the sequence part of the ID: if omitted, in the start of the range it will be assumed to be 0, while in the end part it will be assumed to be the maximum sequence number available. This way, querying using just two milliseconds Unix times, we get all the entries that were generated in that range of time, in an inclusive way. For instance, I may want to query a two milliseconds period I could use:
+
+```
+> XRANGE mystream 1518951480106 1518951480107
+1) 1) 1518951480106-0
+   2) 1) "sensor-id"
+      2) "1234"
+      3) "temperature"
+      4) "19.8"
+```
+
+I have only a single entry in this range, however in real data sets, I could query for ranges of hours, or there could be many items in just two milliseconds, and the result returned could be huge. For this reason, **XRANGE** supports an optional **COUNT** option at the end. By specifying a count, I can just get the first *N* items. If I want more, I can get the last ID returned, increment the sequence part by one, and query again. Let's see this in the following example. We start adding 10 items with **XADD** (I'll not show that, already assume that the stream `mystream` was populated with 10 items). To start my iteration, getting 2 items per command, I start with the full range, but with a count of 2.
+
+```
+> XRANGE mystream - + COUNT 2
+1) 1) 1519073278252-0
+   2) 1) "foo"
+      2) "value_1"
+2) 1) 1519073279157-0
+   2) 1) "foo"
+      2) "value_2"
+```
+
+In order to continue the iteration with the next two items, I have to pick the last ID returned, that is `1519073279157-0` and add 1 to the sequence number part of the ID. Note that the sequence number is 64 bit so there is no need to check for overflows. The resulting ID, that is `1519073279157-1` in this case, can now be used as the new *start* argument for the next **XRANGE** call:
+
+```
+> XRANGE mystream 1519073279157-1 + COUNT 2
+1) 1) 1519073280281-0
+   2) 1) "foo"
+      2) "value_3"
+2) 1) 1519073281432-0
+   2) 1) "foo"
+      2) "value_4"
+```
+
+And so forth. Since **XRANGE** complexity is *O(log(N))* to seek, and then *O(M)* to return M elements, with a small count the command has a logarithmic time complexity, which means that each step of the iteration is fast. So **XRANGE** is also the de facto *streams iterator* and does not require an **XSCAN** command.
+
+The command **XREVRANGE** is the equivalent of **XRANGE** but returning the elements in inverted order, so a practical use for **XREVRANGE** is to check what is the last item in a Stream:
+
+```
+> XREVRANGE mystream + - COUNT 1
+1) 1) 1519073287312-0
+   2) 1) "foo"
+      2) "value_10"
+```
+
+Note that the **XREVRANGE** command takes the *start* and *stop* arguments in reverse order.
+
+
 ## Listening for new items with XREAD
 1. 스트림에 새로운 엔트리가 추가된 것을 하나 이상의 컨슈머는 전달받을 수 있다.
     - LIST의 Blocking API와 비슷하나, 하나 이상의 컨슈머로의 통지는 Pub/Sub과 유사하다.
@@ -562,7 +696,8 @@ However note that Redis streams and consumer groups are persisted and replicated
 
 ## Removing single items from a stream
 
-Streams also have a special command to remove items from the middle of a stream, just by ID. Normally for an append only data structure this may look like an odd feature, but it is actually useful for applications involving, for instance, privacy regulations. The command is called **XDEL**, and will just get the name of the stream followed by the IDs to delete:
+스트림은 또한 ID로 스트림의 중간부터 아이템을 지우기 위한 특별한 커맨드를 가지고 있다. 일반적으로 추가만 가능한 자료 구조에 대해서 이러한 커맨드는 이상한 특징처럼 보일 수 있는데, 실제로 개인 정보 규정과 같은 어플리케이션에는 유용하다. 그러나 사실 유용하다 어플리케이션을 포함하는, 예를 들어, 프라이버시 일반. 이 커맨드는 **XDEL**이고, 스트림의 이름과 함께 삭제할 ID만 필요하다.
+
 
 ```
 > XRANGE mystream - + COUNT 2
@@ -580,40 +715,39 @@ Streams also have a special command to remove items from the middle of a stream,
       2) "3"
 ```
 
-However in the current implementation, memory is not really reclaimed until a macro node is completely empty, so you should not abuse this feature.
+그러나 현재의 구현에서 메크로 노드가 완전히 비어있는 상태가 될때까지, 메모리는 실제 반환되지 않기 때문에, 이 기능을 남용해서는 안된다.
 
 ## Zero length streams
 
-A difference between streams and other Redis data structures is that when the other data structures have no longer elements, as a side effect of calling commands that remove elements, the key itself will be removed. So for instance, a sorted set will be completely removed when a call to **ZREM** will remove the last element in the sorted set. Streams instead are allowed to stay at zero elements, both as a result of using a **MAXLEN** option with a count of zero (**XADD** and **XTRIM** commands), or because **XDEL** was called.
+스트림과 다른 레디스의 자료구조의 차이는 다른 자료구조는 더 이상 엘레먼트를 가지지 않을 때, 엘레먼트를 삭제하는 커맨드를 호출하는 것의 사이드 이펙트로 키 자신이 삭제되는 것이다. 그래서 예를 들면, 정렬된 셋(Sorted set)은 **ZREM**의 호출이 정렬된 셋의 마지막 엘레먼트를 삭제해야 한다면, (키가) 완전히 삭제될 것이다. 대신 스트림은 (**XADD**와 **XTRIM** 커맨드를) **MAXLEN** 옵션을 0과 함께 사용하거나, **XDEL**이 호출되었을 때, 이 경우 모두 엘레먼트가 없는 상태로 유지하는 것이 허용된다.
 
-The reason why such an asymmetry exists is because Streams may have associated consumer groups, and we do not want to lose the state that the consumer groups define just because there are no longer items inside the stream. Currently the stream is not deleted even when it has no associated consumer groups, but this may change in the future.
+왜 이러한 불균형성이 존재하는지에 대한 이유는 스트림이 컨슈머 그룹과 연관되었을지도 모르기 때문이다. 그리고 단지 스트림내에 더 이상 아이템이 없다는 이유로 컨슈머 그룹의 정의 상태를 잃어버려서는 안되기 때문이다. 현재는 스트림이 컨슈머 그룹과 연관이 되어 있지 않다고 하더라도 삭제되지는 않지만, 향후에는 이것은 달라질 수 있다.
 
 ## Total latency of consuming a message
 
-Non blocking stream commands like XRANGE and XREAD or XREADGROUP without the BLOCK option are served synchronously like any other Redis command, so to discuss latency of such commands is meaningless: it is more interesting to check the time complexity of the commands in the Redis documentation. It should be enough to say that stream commands are at least as fast as sorted set commands when extracting ranges, and that `XADD` is very fast and can easily insert from half million to one million of items per second in an average machine if pipelining is used.
+`BLOCK` 옵션이 없는 `XRANGE`와 `XREAD`나 `XREADGROUP`와 같은 논블로킹 스트림 커맨드는 다른 레디스 커맨드처럼 동기적으로 처리된다. 그래서 이러한 커맨드의 레이턴시를 논의하는 것은 의미가 없다: 레디스 공식 문서의 커맨드의 시간복잡도를 확인하는 것이 좀 더 흥미롭다. 스트림 커맨드는 범위를 추출할 때에는 적어도 정렬된 셋(Sorted Set)만큼은 빠르고, `XADD` 역시 매우 빠른데, 파이프라인을 사용한다면, 평균적인 머신에서 초당 50만에서 백만 아이템은 쉽게 입력할 수 있다고 충분히 말할 수 있다.
 
-However latency becomes an interesting parameter if we want to understand the delay of processing the message, in the context of blocking consumers in a consumer group, from the moment the message is produced via `XADD`, to the moment the message is obtained by the consumer because `XREADGROUP` returned with the message.
+`XADD`를 통해 메시지가 생성되는 순간부터 `XREADGROUP`이 메시지를 함께 반환해서 컨슈머가 메시지를 획득하는 순간까지, 컨슈머 그룹내의 블로킹 컨슈머의 문맥에서 메시지 처리의 딜레이를 알고 싶다면 레이턴시는 흥미로운 파라미터가 될 것이다. 
 
 ## How serving blocked consumers work
 
-Before providing the results of performed tests, it is interesting to understand what model Redis uses in order to route stream messages (and in general actually how any blocking operation waiting for data is managed).
+수행된 테스트의 결과를 제공하기 전에, 레디스가 스트림 메시지를 라우팅하기 위해 무슨 모델을 사용하는지를 이해하는 것은 흥미롭다. (그리고 일반적으로 실제 데이터를 대기하는 블로킹 오퍼레이션이 어떻게 관리되는지)
 
-* The blocked client is referenced in an hash table that maps keys for which there is at least one blocking consumer, to a list of consumers that are waiting for such key. This way, given a key that received data, we can resolve all the clients that are waiting for such data.
-* When a write happens, in this case when the `XADD` command is called, it calls the `signalKeyAsReady()` function. This function will put the key into a list of keys that need to be processed, because such keys may have new data for consumers blocked. Note that such *ready keys* will be processed later, so in the course of the same event loop cycle, it is possible that the key will receive other writes.
-* Finally, before returning into the event loop, the *ready keys* are finally processed. For each key the list of clients waiting for data is ran, and if applicable, such clients will receive the new data that arrived. In the case of streams the data is the messages in the applicable range requested by the consumer.
+* 블로킹된 클라이언트는 적어도 하나의 블로킹 컨슈머가 있는 키들을, 그리고 이러한 키들을 대기하고 있는 컨슈머의 리스트로 맵핑을 하고 있는 해시 테이블에서 참고된다. 이러한 방법으로, 데이터를 받는 키가 주어지면, 그러한 데이터를 대기하는 모든 클라이언트를 분석할 수 있다.
+* 쓰기가 발생할 때, 이러한 경우 `XADD` 커맨드가 호출되는 때, `signalKeyAsReady()` 함수를 호출한다. 이 함수는 처리를 필요로 하는 키의 리스트에 키를 넣는데, 이는 그러한 키들이 블로킹된 컨슈머를 위한 새로운 데이터를 가질 수도 있기 때문이다. 그러한 *키 (ready keys)*는 이후에 처리될 것이고, 그래서 동일한 이벤트 사이클 중에 키가 다른 쓰기를 받아들이는 것이 가능하다는 점을 유의해야한다.
+* 마지막으로, 이벤트 루프로 반환하기 전에, *ready keys*는 마지막으로 처리된다. 각각의 키에 대해서 데이터를 기다리는 클라이언트의 리스트가 실행되고, 만약 해당된다면, 그러한 클라이언트는 도착하는 새로운 데이터를 받게 될 것이다. 스트림의 경우에 데이터는 컨슈머에 의해 요청된 범위에 해당하는 메시지이다.
 
-As you can see, basically, before returning to the event loop both the client calling `XADD` that the clients blocked to consume messages, will have their reply in the output buffers, so the caller of `XADD` should receive the reply from Redis about at the same time the consumers will receive the new messages.
+위에서 보듯, 기본적으로 이벤트 루프로 돌아가기 전에, 메시지를 소비하기 위해 블록된, `XADD`를 호출하는 클라이언트는 출력 버퍼(output buffer)에 응답할 것이고, 그래서 컨슈머가 새로운 메시지를 받는 것과 거의 동시에 `XADD`의 호출 클라이언트는 레디스로부터 응답을 받아야한다.
 
-This model is *push based*, since adding data to the consumers buffers will be performed directly by the action of calling `XADD`, so the latency tends to be quite predictable.
+이 모델은 *푸시 기반(push based)*이며, 데이터를 컨슈머 버퍼로 추가하는 것이 `XADD`를 호출하는 액션에 의해 직접 수행되기 때문이며, 그래서 레이턴시는 매우 예측 가능한 경향이 있다.
 
 ## Latency tests results
 
-In order to check this latency characteristics a test was performed using multiple instances of Ruby programs pushing messages having as an additional field the computer millisecond time, and Ruby programs reading the messages from the consumer group and processing them. The message processing step consisted in comparing the current computer time with the message timestamp, in order to understand the total latency.
+레이턴시의 특성을 체크하기 위해 테스트가 수행되었고, 이 테스트는 컴퓨터 밀리초 시간을 추가 필드로 가지는 메시지를 푸시하는 루비 프로그램과 컨슈머 그룹으로부터 메시지를 읽고 처리하는 루비 프로그램을 여러 인스턴스를 이용해서 수행되었다. 메시지 처리 단계는 전체 레이턴시를 알기 위해, 현재 컴퓨터 시간과 메시지의 타임스탬프를 비교하는 것으로 구성되었다.
 
-Such programs were not optimized and were executed in a small two core instance also running Redis, in order to try to provide the latency figures you could expect in non optimal conditions. Messages were produced at a rate of 10k per second, with ten simultaneous consumers consuming and acknowledging the messages from the same Redis stream and consumer group.
+이러한 프로그램은 최적화되지 않은 상황에서 예상할 수 있는 레이턴시의 수치를 제공하기 위해 최적화되지 않았고, 레디스 또한 실행중인 작은 2코어 인스턴스에서 실행되었다. 메시지들은 초당 10k의 비율로 생성되었으며, 10개의 동시에 존재하는 컨슈머는 동일한 레디스 스트림과 컨슈머 그룹으로부터 메시지를 소비하고 받았음을 통지했다.
 
-
-Results obtained:
+얻은 결과:
 
 ```
 Processed between 0 and 1 ms -> 74.11%
@@ -623,11 +757,11 @@ Processed between 3 and 4 ms -> 0.01%
 Processed between 4 and 5 ms -> 0.02%
 ```
 
-So 99.9% of requests have a latency <= 2 milliseconds, with the outliers that remain still very close to the average.
+요청의 99.9%는 레이턴시가 2밀리초와 같거나 작았으며, 평균에 거의 근접한 이상치(outliers)를 가졌다.
 
-Adding a few million unacknowledged messages to the stream does not change the gist of the benchmark, with most queries still processed with very short latency.
+통지가 없었던 몇백만의 메시지를 스트림으로 추가하는 것은 벤치마크의 요지를 바꾸지는 않으며, 대부분의 쿼리가 여전히 매우 짧은 레이턴시로 처리된다.
 
-A few remarks:
+몇 가지 언급:
 
-* Here we processed up to 10k messages per iteration, this means that the `COUNT` parameter of XREADGROUP was set to 10000. This adds a lot of latency but is needed in order to allow the slow consumers to be able to keep with the message flow. So you can expect a real world latency that is a lot smaller.
-* The system used for this benchmark is very slow compared to today's standards.
+* 여기에서 매 반복마다 최대 10k의 메시지를 처리했는데, 이것은 `XREADGROUP`의 `COUNT` 파라미터가 10000으로 설정되었다는 것을 의미한다. 이것은 많은 레이턴시를 더했지만, 느린 컨슈머가 메시지의 흐름을 유지할 수 있게 하기 위해서 필요로하다. 따라서 현실에서의 레이턴시는 훨씬 더 작을 것을 기대할 수 있다.
+* 이 벤치마크에서 사용한 시스템은 오늘날의 표준과 비교해서 매우 느리다.
