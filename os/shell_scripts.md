@@ -1,8 +1,8 @@
 ---
-tags: [redis, shell]
+tags: [redis, os, shell]
 ---
 
-# 자주 사용하는 스크립트
+# 1. 자주 사용하는 스크립트
 
 <!-- TOC -->
 
@@ -13,7 +13,7 @@ tags: [redis, shell]
 
 <!-- /TOC -->
 
-## Swap 사용량 조사: 1
+## 1.1. Swap 사용량 조사: 1
 ```
 (echo "COMM PID SWAP"; 
     for file in /proc/*/status ; do 
@@ -22,7 +22,7 @@ tags: [redis, shell]
 ) | column -t
 ```
 
-## Swap 사용량 조사: 2
+## 1.2. Swap 사용량 조사: 2
 *https://blog.sleeplessbeastie.eu/2016/12/26/how-to-display-processes-using-swap-space/*
 ```bash
 find /proc -maxdepth 2 -path "/proc/[0-9]*/status" -readable \
@@ -36,7 +36,7 @@ find /proc -maxdepth 2 -path "/proc/[0-9]*/status" -readable \
  | awk '{print $(NF-1),$0}' | sort -h | cut -d " " -f2-
 ```
 
-## redis 서버의 swap 사용량
+## 1.3. redis 서버의 swap 사용량
 ```
 (echo "PID COMM SWAP(KB)";
 for REDIS_PID in $(pgrep -f redis-server); do 
