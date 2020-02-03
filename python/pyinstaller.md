@@ -54,5 +54,17 @@ continue with installation? (y/N) y
 export LD_LIBRARY_PATH=$HOME/.pyenv/versions/3.6.6/lib
 ```
 
+### Centos6 & 2.7.17
+이런 에러가 발생하는 경우에는, 
+*IOError: Python library not found: libpython2.7.so.1.0, libpython2.7mu.so.1.0, libpython2.7m.so.1.0, libpython2.7m.so*
+```
+# 재설치
+PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install 2.7.17
+pyenv shell 2.7.17
+pip install pyinstaller
+export LD_LIBRARY_PATH=/root/.pyenv/versions/2.7.17/lib/
+
+```
+
 ## Reference
 - https://7me.oji.0j0.jp/2018/09/13/pyinstaller-pyenv-oserror-typeerror-library-not-found/
