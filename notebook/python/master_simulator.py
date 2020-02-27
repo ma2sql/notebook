@@ -68,14 +68,14 @@ class Servers:
         return len(self._servers)
 
 
-def find_master(server, pre_server, servers):
-    print '=> ', server, len(server.slaves)
+def find_master(server, pre_server, servers, idx=1):
+    print '({}) ip={}, slaves={}'.format(idx, server, len(server.slaves))
     if server.master_ip == None:
         return [server]
     elif pre_server is not None and server.master_ip == pre_server.ip:
         return [server, pre_server]
     else:
-        return find_master(servers.get_server(server.master_ip), server, servers)
+        return find_master(servers.get_server(server.master_ip), server, servers, idx+1)
 
 
 def elect_master(candidates):
@@ -90,8 +90,10 @@ def elect_master(candidates):
         
 if __name__ == '__main__':
     servers = Servers()
+    servers.server_factory('10.10.10.6', 20306, True, '10.10.10.5')
+    servers.server_factory('10.10.10.5', 20306, True, '10.10.10.3')
     servers.server_factory('10.10.10.1', 20306, False, '10.10.10.2')
-    servers.server_factory('10.10.10.2', 20306, False, '10.10.10.1')
+    servers.server_factory('10.10.10.2', 20306, True, '10.10.10.1')
     servers.server_factory('10.10.10.3', 20306, True,  '10.10.10.1')
     servers.server_factory('10.10.10.4', 20306, True,  '10.10.10.1')
 
