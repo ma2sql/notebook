@@ -5,7 +5,7 @@ Replication
 
 이 시스템은 세 가지의 주요 메커니즘을 이용해서 작동한다:
 
-1. 마스터와 리플리카 인스턴스가 무사히 커넥션을 맺고 있을 때, 마스터는 업데이트된 리플리카를 유지하려고 커맨드의 스트림을 리플리카로 전송한다. 이는 클라이언트 쓰기(write) 오퍼레이션, 키의 만료, 축출, 그 외의 마스터 데이터 셋을 변경시키는 액션 등, 마스터 측에서 발생하는 데이터 셋에 대한 영향을 복제하기 위해서이다.
+1. 마스터와 리플리카 인스턴스가 무사히 커넥션을 맺고 있을 때, 마스터는 업데이트된 리플리카를 유지하려고 커맨드의 스트림을 리플리카로 전송한다. 이는 클라이언트 쓰기(write) 오퍼레이션, 키의 만료, 축출, 그 외의 마스터 데이터 셋을 변경시키는 액션 등, 마스터 측에서 발생하는 데이터 셋에 대한 영향을 복제하기 위해서이다.
 2. 네트워크 이슈나 마스터나 리플리에서 감지된 타임 아웃 등등으로 마스터와 리플리카 사이의 연결이 깨질 때, 리플리카는 재연결과 부분 재동기화(partial resynchronization)를 시도한다: 이것은 단순히 연결이 끊긴 시간 동안에 잃어버린 커맨드의 스트림 일부만을 얻으려고 시도하는 것을 의미한다.
 3. 부분 재동기화가 가능하지 않을 때, 리플리카는 전체 재동기화를 요청한다. 이것은 마스터가 자신의 데이터 전체에 대한 스냅샷을 작성하고, 그것을 리플리카로 전송할 필요가 있으며, 그리고 나서 데이터 셋이 변경될 때마다 커맨드의 스트림을 계속 전송하는 등의 좀 더 복잡한 절차가 포함된다.
 
@@ -68,13 +68,13 @@ Replication ID explained
 
 이전 섹션에서 우리는 두 인스턴스가 동일한 리플리케이션 ID와 리플리케이션 오프셋을 가지고 있다면, 그 둘은 완전히 동일한 데이터라고 이야기했다. 하지만 정확히 리플리케이션 ID가 무엇인지? 그리고 왜 인스턴스가 실제 메인 ID와 세컨더리 ID, 2개의 리플리케이션 ID를 가지고 있는지를 이해하는 것에 유용하다.
 
-리플리케이션 ID는 기본적으로 지정된 데이터 셋의 *이력(history)*을 표시한다. 인스턴스가 마스터로 재시작하거나, 리플리카가 마스터로 승력될 때마다, 이 인스턴스에 대해서는 새로운 리플리케이션 ID가 생성된다. 마스터로 연결된 리플리카들은 핸드쉐이크 이후에 마스터의 리플리케이션 ID를 상속할 것이다. 그래서 동일한 ID를 가진 두 인스턴스는 잠재적으로 다른 시간에 동일한 데이터를 가지고 있다는 사실에 의해 연관된다.  논리적인 시간으로 작용하는 오프셋이다. 가장 많이 업데이트된 데이터 셋을 가지는 특정 이력(리플리케이션 ID)을 알기 위한 논리적인 시간으로 작동하는 오프셋이다.
+리플리케이션 ID는 기본적으로 지정된 데이터 셋의 *이력(history)*을 표시한다. 인스턴스가 마스터로 재시작하거나, 리플리카가 마스터로 승력될 때마다, 이 인스턴스에 대해서는 새로운 리플리케이션 ID가 생성된다. 마스터로 연결된 리플리카들은 핸드쉐이크 이후에 마스터의 리플리케이션 ID를 상속할 것이다. 그래서 동일한 ID를 가진 두 인스턴스는 잠재적으로 다른 시간에 동일한 데이터를 가지고 있다는 사실에 의해 연관된다.  논리적인 시간으로 작용하는 오프셋이다. 가장 많이 업데이트된 데이터 셋을 가지는 특정 이력(리플리케이션 ID)을 알기 위한 논리적인 시간으로 작동하는 오프셋이다.
 
-For instance if two instances A and B have the same replication ID, but one with offset 1000 and one with offset 1023, it means that the first lacks certain commands applied to the data set. It also means that A, by applying just a few commands, may reach exactly the same state of B.
+예를 들어, 인스턴스 A와 B, 두 개의 인스턴스가 같은 리플리케이션 ID를 가지고 있지만, 하나는 오프셋이 1000, 그리고 다른 하나는 오프셋이 1023이라고 할 때, 첫 번째는 데이터 셋에 적용된 특정 커맨드가 없다는 것을 의미한다. 또한 A가 몇 개의 커맨드를 적용함으로써 B와 정확히 동일한 상태가 될 수 있다는 것을 의미한다.
 
-The reason why Redis instances have two replication IDs is because of replicas that are promoted to masters. After a failover, the promoted replica requires to still remember what was its past replication ID, because such replication ID was the one of the former master. In this way, when other replicas will synchronize with the new master, they will try to perform a partial resynchronization using the old master replication ID. This will work as expected, because when the replica is promoted to master it sets its secondary ID to its main ID, remembering what was the offset when this ID switch happened. Later it will select a new random replication ID, because a new history begins. When handling the new replicas connecting, the master will match their IDs and offsets both with the current ID and the secondary ID (up to a given offset, for safety). In short this means that after a failover, replicas connecting to the new promoted master don't have to perform a full sync.
+왜 레디스 인스턴스가 2개의 리플리케이션을 가지고 있는지에 대한 이유는 마스터로 승격되는 리플리카 때문이다. 페일오버 이후, 승격된 리플리카는 여전히 지난 리플리케이션 ID가 무엇인지 기억해야할 필요가 있는데, 그러한 리플리케이션 ID가 이전의 마스터의 것 중에 하나이기 때문이다. 이러한 방식으로, 다른 리플리카가 새로운 마스터와 동기화할 때, 오래된 마스터의 리플리케이션 ID를 이용해서 부분 재동기화를 시도한다. 이것은 예상한대로 동작하는데, 리플리카가 마스터로 승격될 때 세컨더리 ID를 메인 ID로 설정하고, ID 변경이 발생했을 때의 오프셋이 무엇인지를 기억하기 때문이다. 이 후, 새로운 히스토리가 시작되므로 새로운 랜덤 ID를 선택해서 사용한다. 새로운 리플리카들에 대한 연결을 처리할 때, 마스터는 리플리카들의 IDs와 오프셋을 현재의 ID와 세컨더리 ID (안전을 위해 지정된 오프셋까지)까지 일치시킨다. 즉, 이것은 페일오버 이후에 새롭게 승격된 마스터로 연결하려는 리플리카는 전체 동기화를 수행할 필요가 없다는 것을 의미한다.
 
-In case you wonder why a replica promoted to master needs to change its replication ID after a failover: it is possible that the old master is still working as a master because of some network partition: retaining the same replication ID would violate the fact that the same ID and same offset of any two random instances mean they have the same data set.
+이러한 경우에 왜 마스터로 승격된 리플리카가 페일오버 이후에 자신의 리플리케이션 ID를 변경해야하는지가 궁금할 것이다: 오래된 마스터는 여전히 마스터로 동작하고 있을 수 있는데, 왜냐하면 일부 네트워크 파티션 때문이다. 동일한 리플리케이션 ID를 유지하는 것은 동일한 ID와 동일한 오프셋을 가진 임의의 2개의 인스턴스는 동일한 데이터 셋을 가지고 있다는 사실(fact)을 위반하기 때문이다.
 
 Diskless replication
 ---
