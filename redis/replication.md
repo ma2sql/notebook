@@ -47,28 +47,35 @@ Every time data safety is important, and replication is used with master configu
 How Redis replication works
 ---
 
-Every Redis master has a replication ID: it is a large pseudo random string that marks a given story of the dataset. Each master also takes an offset that increments for every byte of replication stream that it is produced to be sent to replicas, in order to update the state of the replicas with the new changes modifying the dataset. The replication offset is incremented even if no replica is actually connected, so basically every given pair of:
+모든 레디스 마스터는 리플리케이션 ID를 가진다: 이것은 큰 의사(pseudo) 랜덤 문자열로, 지정된 데이터 셋의 이력을 표시한다. 또한 각 마스터는 오프셋을 취하는데, 이 오프셋은 리플리카로 전송하기 위해서 생성되는 것으로 리플리케이션 스트림의 모든 바이트를 증가시키는데, 이는 데이터 셋을 수정하는 새로운 변경사항으로 리플리케이션의 상태를 업데이트하기 위해서다. 리플리케이션 오프셋은 심지어 연결된 리플리카가 없어도 증가되는데, 그렇기 때문에 기본적으로 주어진 오프셋의 한 쌍은:
 
     Replication ID, offset
 
-Identifies an exact version of the dataset of a master.
+마스터 데이터 셋의 정확한 버전을 식별한다.
 
 When replicas connect to masters, they use the `PSYNC` command in order to send their old master replication ID and the offsets they processed so far. This way the master can send just the incremental part needed. However if there is not enough *backlog* in the master buffers, or if the replica is referring to an history (replication ID) which is no longer known, than a full resynchronization happens: in this case the replica will get a full copy of the dataset, from scratch.
+리플리카가 마스터로 접속할 때, 오래된 마스터의 리플리케이션 ID와 지금까지 처리한 오프셋을 전송하기 위해 `PSYNC` 커맨드를 사용한다. 이렇게 해서 마스터는 필요한만큼의 증가분만 보낼 수 있다. 그러나 마스터 버퍼 내에 충분한 양의 *백로그(backlog)* 가 존재하지 않거나, 또는 만약 리플리카가 더 이상 알려지지 않은 히스토리(리플리케이션 ID)를 참조하고 있을 때, 그렇게 되면 전체 재동기화(full resynchronization)가 발생한다.
+이러한 방법으로 마스터는 오직 필요만큼의 증분 데이터만 보낼 수 있다. 하지만 *backlog*가 충분하지 않다면, 마스터 버퍼안에, 또는 리플리카가 히스토리(리플리케이션 ID)를 참고하고 있다면, 더 이상 유용하지 않은, 그렇다면 전체 재동기화가 발생한다: 이러한 경우 리플리카는 데이터 셋의 전체 복사본을 얻게된다. 스크래치로부터.
 
 This is how a full synchronization works in more details:
+이거는 어떻게 전체 동기화가 동작하는지 좀 더 상세한 내용이다.
 
 The master starts a background saving process in order to produce an RDB file. At the same time it starts to buffer all new write commands received from the clients. When the background saving is complete, the master transfers the database file to the replica, which saves it on disk, and then loads it into memory. The master will then send all buffered commands to the replica. This is done as a stream of commands and is in the same format of the Redis protocol itself.
+마스터는 백그라운드로 세이빙 프로세스를 시작한다. RDB 파일을 저장히기 위한. 동시에 클라이언트로부터 전달받은 새로운 쓰기 커맨드를 버퍼에 담기 시작한다. 백그라운드의 세이빙이 완료될 때, 마스터는 리플리카로 데이터셋 파일을 전송하고, 리플리카는 그것을 디스크 위에 저장하고, 그리고 메모리로 불러들인다. 마스터는 모든 버퍼된 커맨드를 리플리카로 보낼 것이다. 이것은 커맨드의 스트림을 보냄으로써 완료되고, 레플리케이션 프로토콜의 포맷과 동일하다.
 
 You can try it yourself via telnet. Connect to the Redis port while the server is doing some work and issue the `SYNC` command. You'll see a bulk transfer and then every command received by the master will be re-issued in the telnet session. Actually `SYNC` is an old protocol no longer used by newer Redis instances, but is still there for backward compatibility: it does not allow partial resynchronizations, so now `PSYNC` is used instead.
+이것은 텔넷을 통해서도 직접 시도해볼 수 있다. 레디스 포트로 접속해서, 서버가 무언가를 작업하는 동안, `SYNC` 커맨드를 발행한다. 그렇다면 벌크로 전송되는 것을 볼 수 있고, 그리고나서 모든 커맨드를 마스터에 의해 발생한, 받게된다. 텔넷 세션에서 다시 생성될 것이다. 실제로 `SYNC`는 오래된 프로토콜로 새로운 레디스 인스턴스에서는 더 이상 사용되지 않는다. 하지만 여전히 하위 호환성을 위해 여전히 존재한다. 부분 재동기화는 할 수 없다. 그래서 `PSYNC`가 사용된다. 대신에.
 
 As already said, replicas are able to automatically reconnect when the master-replica link goes down for some reason. If the master receives multiple concurrent replica synchronization requests, it performs a single background save in order to serve all of them.
+이미 언급한대로, 리플리카들은 자동으로 다시 연결할 수 있다. 마스터-리플리카 연결이 어떠한 이유로 떨어졌을 때. 마스터는 동시에 여러 리플리카 동기 요청을 받을 수 있는데, 하나의 백그라운드 세이브가 수행되는다 모두에게 그것을 제공하기 위해서.
+
 
 Replication ID explained
 ---
 
 이전 섹션에서 우리는 두 인스턴스가 동일한 리플리케이션 ID와 리플리케이션 오프셋을 가지고 있다면, 그 둘은 완전히 동일한 데이터라고 이야기했다. 하지만 정확히 리플리케이션 ID가 무엇인지? 그리고 왜 인스턴스가 실제 메인 ID와 세컨더리 ID, 2개의 리플리케이션 ID를 가지고 있는지를 이해하는 것에 유용하다.
 
-리플리케이션 ID는 기본적으로 지정된 데이터 셋의 *이력(history)*을 표시한다. 인스턴스가 마스터로 재시작하거나, 리플리카가 마스터로 승력될 때마다, 이 인스턴스에 대해서는 새로운 리플리케이션 ID가 생성된다. 마스터로 연결된 리플리카들은 핸드쉐이크 이후에 마스터의 리플리케이션 ID를 상속할 것이다. 그래서 동일한 ID를 가진 두 인스턴스는 잠재적으로 다른 시간에 동일한 데이터를 가지고 있다는 사실에 의해 연관된다.  논리적인 시간으로 작용하는 오프셋이다. 가장 많이 업데이트된 데이터 셋을 가지는 특정 이력(리플리케이션 ID)을 알기 위한 논리적인 시간으로 작동하는 오프셋이다.
+리플리케이션 ID는 기본적으로 지정된 데이터 셋의 *이력(history)* 을 표시한다. 인스턴스가 마스터로 재시작하거나, 리플리카가 마스터로 승력될 때마다, 이 인스턴스에 대해서는 새로운 리플리케이션 ID가 생성된다. 마스터로 연결된 리플리카들은 핸드쉐이크 이후에 마스터의 리플리케이션 ID를 상속할 것이다. 그래서 동일한 ID를 가진 두 인스턴스는 잠재적으로 다른 시간에 동일한 데이터를 가지고 있다는 사실에 의해 연관된다.  논리적인 시간으로 작용하는 오프셋이다. 가장 많이 업데이트된 데이터 셋을 가지는 특정 이력(리플리케이션 ID)을 알기 위한 논리적인 시간으로 작동하는 오프셋이다.
 
 예를 들어, 인스턴스 A와 B, 두 개의 인스턴스가 같은 리플리케이션 ID를 가지고 있지만, 하나는 오프셋이 1000, 그리고 다른 하나는 오프셋이 1023이라고 할 때, 첫 번째는 데이터 셋에 적용된 특정 커맨드가 없다는 것을 의미한다. 또한 A가 몇 개의 커맨드를 적용함으로써 B와 정확히 동일한 상태가 될 수 있다는 것을 의미한다.
 
