@@ -53,7 +53,7 @@ How Redis replication works
 
 마스터 데이터 셋의 정확한 버전을 식별한다.
 
-리플리카가 마스터로 접속할 때, 오래된 마스터의 리플리케이션 ID와 지금까지 처리한 오프셋을 전송하기 위해 `PSYNC` 커맨드를 사용한다. 이렇게 해서 마스터는 필요한만큼의 증가분만 보낼 수 있다. 그러나 마스터 버퍼 내에 충분한 양의 *백로그(backlog)* 가 존재하지 않거나, 또는 만약 리플리카가 더 이상 알려지지 않은 히스토리(리플리케이션 ID)를 참조하고 있을 때, 그렇게 되면 맨 처음부터 전체 재동기화(full resynchronization)가 발생한다.
+리플리카가 마스터로 접속할 때, 이전 마스터의 리플리케이션 ID와 지금까지 처리한 오프셋을 전송하기 위해 `PSYNC` 커맨드를 사용한다. 이렇게 해서 마스터는 필요한만큼의 증가분만 보낼 수 있다. 그러나 마스터 버퍼 내에 충분한 양의 *백로그(backlog)* 가 존재하지 않거나, 또는 만약 리플리카가 더 이상 알려지지 않은 히스토리(리플리케이션 ID)를 참조하고 있을 때, 그렇게 되면 맨 처음부터 전체 재동기화(full resynchronization)가 발생한다.
 
 이것은 어떻게 전체 동기화가 작동하는지에 대한 좀 더 상세한 내용이다:
 
@@ -73,9 +73,9 @@ Replication ID explained
 
 예를 들어, 인스턴스 A와 B, 두 개의 인스턴스가 같은 리플리케이션 ID를 가지고 있지만, 하나는 오프셋이 1000, 그리고 다른 하나는 오프셋이 1023이라고 할 때, 첫 번째는 데이터 셋에 적용된 특정 커맨드가 없다는 것을 의미한다. 또한 A가 몇 개의 커맨드를 적용함으로써 B와 정확히 동일한 상태가 될 수 있다는 것을 의미한다.
 
-왜 레디스 인스턴스가 2개의 리플리케이션을 가지고 있는지에 대한 이유는 마스터로 승격되는 리플리카 때문이다. 페일오버 이후, 승격된 리플리카는 여전히 지난 리플리케이션 ID가 무엇인지 기억해야할 필요가 있는데, 그러한 리플리케이션 ID가 이전의 마스터의 것 중에 하나이기 때문이다. 이러한 방식으로, 다른 리플리카가 새로운 마스터와 동기화할 때, 오래된 마스터의 리플리케이션 ID를 이용해서 부분 재동기화를 시도한다. 이것은 예상한대로 동작하는데, 리플리카가 마스터로 승격될 때 세컨더리 ID를 메인 ID로 설정하고, ID 변경이 발생했을 때의 오프셋이 무엇인지를 기억하기 때문이다. 이 후, 새로운 히스토리가 시작되므로 새로운 랜덤 ID를 선택해서 사용한다. 새로운 리플리카들에 대한 연결을 처리할 때, 마스터는 리플리카들의 IDs와 오프셋을 현재의 ID와 세컨더리 ID (안전을 위해 지정된 오프셋까지)까지 일치시킨다. 즉, 이것은 페일오버 이후에 새롭게 승격된 마스터로 연결하려는 리플리카는 전체 동기화를 수행할 필요가 없다는 것을 의미한다.
+왜 레디스 인스턴스가 2개의 리플리케이션을 가지고 있는지에 대한 이유는 마스터로 승격되는 리플리카 때문이다. 페일오버 이후, 승격된 리플리카는 여전히 지난 리플리케이션 ID가 무엇인지 기억해야할 필요가 있는데, 그러한 리플리케이션 ID가 이전의 마스터의 것 중에 하나이기 때문이다. 이러한 방식으로, 다른 리플리카가 새로운 마스터와 동기화할 때, 이전 마스터의 리플리케이션 ID를 이용해서 부분 재동기화를 시도한다. 이것은 예상한대로 동작하는데, 리플리카가 마스터로 승격될 때 세컨더리 ID를 메인 ID로 설정하고, ID 변경이 발생했을 때의 오프셋이 무엇인지를 기억하기 때문이다. 이 후, 새로운 히스토리가 시작되므로 새로운 랜덤 ID를 선택해서 사용한다. 새로운 리플리카들에 대한 연결을 처리할 때, 마스터는 리플리카들의 IDs와 오프셋을 현재의 ID와 세컨더리 ID (안전을 위해 지정된 오프셋까지)까지 일치시킨다. 즉, 이것은 페일오버 이후에 새롭게 승격된 마스터로 연결하려는 리플리카는 전체 동기화를 수행할 필요가 없다는 것을 의미한다.
 
-이러한 경우에 왜 마스터로 승격된 리플리카가 페일오버 이후에 자신의 리플리케이션 ID를 변경해야하는지가 궁금할 것이다: 오래된 마스터는 여전히 마스터로 동작하고 있을 수 있는데, 왜냐하면 일부 네트워크 파티션 때문이다. 동일한 리플리케이션 ID를 유지하는 것은 동일한 ID와 동일한 오프셋을 가진 임의의 2개의 인스턴스는 동일한 데이터 셋을 가지고 있다는 사실(fact)을 위반하기 때문이다.
+이러한 경우에 왜 마스터로 승격된 리플리카가 페일오버 이후에 자신의 리플리케이션 ID를 변경해야하는지가 궁금할 것이다: 이전 마스터는 여전히 마스터로 동작하고 있을 수 있는데, 왜냐하면 일부 네트워크 파티션 때문이다. 동일한 리플리케이션 ID를 유지하는 것은 동일한 ID와 동일한 오프셋을 가진 임의의 2개의 인스턴스는 동일한 데이터 셋을 가지고 있다는 사실(fact)을 위반하기 때문이다.
 
 Diskless replication
 ---
@@ -196,10 +196,10 @@ There are two Redis commands that provide a lot of information on the current re
 Partial resynchronizations after restarts and failovers
 ---
 
-Since Redis 4.0, when an instance is promoted to master after a failover, it will be still able to perform a partial resynchronization with the replicas of the old master. To do so, the replica remembers the old replication ID and offset of its former master, so can provide part of the backlog to the connecting replicas even if they ask for the old replication ID.
+레디스 4.0이후, 페일오버 이후에 한 인스턴스가 마스터로 승격되었을 때, 이전 마스터의 리플리카와 여전히 부분 재동기화(partial resynchronization)를 수행할 수 있다. 그렇기 하기 위해, 리플리카는 이전 마스터의  리플리케이션 ID와 오프셋을 기억하므로, 심지어 오래된 리플리케이션 ID로 요청을 하더라도,백로그의 일부를 연결하려는 리플리카에게 제공할 수 있다. 
 
-However the new replication ID of the promoted replica will be different, since it constitutes a different history of the data set. For example, the master can return available and can continue accepting writes for some time, so using the same replication ID in the promoted replica would violate the rule that a of replication ID and offset pair identifies only a single data set.
+하지만 승격된 리플리카의 새로운 리플리케이션 ID는 별도의 데이터셋의 히스토리를 구성하기 때문에 달라질 것이다. 예를 들어, 마스터가 사용 가능한 상태로 돌아올 수 있고, 일정 시간동안 쓰기를 계속 받아들일 수 있는데, 그렇기 때문에 승격된 리플리카내에서 동일한 리플리케이션 ID를 사용하는 것은 "리플리케이션 ID와 오프셋의 쌍이 오직 하나의 데이터 셋만을 식별해야한다"는 룰을 위반한다.
 
-Moreover, replicas - when powered off gently and restarted - are able to store in the `RDB` file the information needed in order to resynchronize with their master. This is useful in case of upgrades. When this is needed, it is better to use the `SHUTDOWN` command in order to perform a `save & quit` operation on the replica.
+게다가, 완만하게 전원이 꺼지고 재시작될 때, 리플리카는 그들의 마스터와 재동기화를 하기위해 필요한 정보를 `RDB`파일에 저장할 수 있다. 이것은 업그레이드 등의 경우에 유용하다. 이것이 팔요하다면, 리플리카에서 `save & quit` 작업을 수행하기 위해서 `SHUTDOWN` 커맨드를 사용하는 것이 좋다.
 
-It is not possible to partially resynchronize a replica that restarted via the AOF file. However the instance may be turned to RDB persistence before shutting down it, than can be restarted, and finally AOF can be enabled again.
+AOF 파일을 통해서 다시 시작된 리플리카를 부분 재동기화하는 것은 가능하지 않다. 하지만 인스턴스는 셧다운 전에 RDB 영속성으로 전환하고나서 재시작할 수 있고, 마지막으로 AOF를 다시 활성화할 수 있다.
