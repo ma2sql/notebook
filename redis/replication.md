@@ -160,15 +160,15 @@ For more information, please check the example `redis.conf` file shipped with th
 How Redis replication deals with expires on keys
 ---
 
-Redis expires allow keys to have a limited time to live. Such a feature depends on the ability of an instance to count the time, however Redis replicas correctly replicate keys with expires, even when such keys are altered using Lua scripts.
+레디스는 키가 제한된 생존 시간을 갖게 함으로써 만료시킨다. 그러한 기능은 인스턴스가 시간을 계산하는 능력에 달려 있지만, 레디스 리플리카는 심지어 루아(Lua) 스크립트를 사용해서 키를 변경할 때에도, 키를 만료시간과 함께 키를 정확하게 복제한다.
 
-To implement such a feature Redis cannot rely on the ability of the master and replica to have synchronized clocks, since this is a problem that cannot be solved and would result in race conditions and diverging data sets, so Redis uses three main techniques in order to make the replication of expired keys able to work:
+그러한 기능을 구현하기 위해서 레디스는 마스터와 리플리카의 시간(clock)을 동기화하는 능력에 의지하지 않는데, 이것은 해결될 수 없는 문제이고, 경쟁 상태와 데이터 셋의 불일치(divering)를 초래할 수 있다. 따라서, 레디스는 세가지의 주요 테크닉을 사용해서 만료된 키에 대해 리플리케이션이 동작하도록 한다:
 
-1. Replicas don't expire keys, instead they wait for masters to expire the keys. When a master expires a key (or evict it because of LRU), it synthesizes a `DEL` command which is transmitted to all the replicas.
-2. However because of master-driven expire, sometimes replicas may still have in memory keys that are already logically expired, since the master was not able to provide the `DEL` command in time. In order to deal with that the replica uses its logical clock in order to report that a key does not exist **only for read operations** that don't violate the consistency of the data set (as new commands from the master will arrive). In this way replicas avoid reporting logically expired keys are still existing. In practical terms, an HTML fragments cache that uses replicas to scale will avoid returning items that are already older than the desired time to live.
-3. During Lua scripts executions no key expiries are performed. As a Lua script runs, conceptually the time in the master is frozen, so that a given key will either exist or not for all the time the script runs. This prevents keys expiring in the middle of a script, and is needed in order to send the same script to the replica in a way that is guaranteed to have the same effects in the data set.
+1. 리플리카는 키를 만료시키지 않고, 대신 마스터가 키를 만료시키기를 기다린다. 마스터가 키를 만료시킬 때 (또는 LRU로 키가 제거되는), `DEL` 커맨드를 합성하고(synthesizes)하고, 이는 모든 리플리카로 전파된다.
+2. 그러나 마스터에 의존적인(master-driven) 만료때문에 마스터가 제 때에 `DEL` 커맨드를 전달해줄 수 없을 때에는, 때때로 리플리카는 여전히 메모리에 이미 논리적으로 만료된 키를 가지고 있을 수도 있다. 이것을 다루기 위해서, 리플리카는 (마스터로부터 새로운 커맨드가 도착하더라도) 데이터 셋의 일관성을 위반하지 않는, **오직 읽기 연산(only for read operations)**에 대해서만 키가 존재하지 않는다고 보고하기 위해서 자신의 논리적인 시간(logical clock)을 이용한다. 이러한 방식으로 리플리카는 논리적으로 만료된 키가 여전히 존재한다고 보고하지 않도록 한다. 실질적인 사례에서, 확장을 위해 리플리카를 사용하는 HTML 엘리먼트 조각(fragments)의 캐시는 이미 TTL시간보다 오래된 아이템을 반환하지 않도록 한다.
+3. 루아(Lua) 스크립트의 실행동안 키 만료는 수행되지 않는다. 루아 스크립트를 실행할 때, 개념적으로 마스터상의 시간은 동결(frozen)되며, 그래서 주어진 키는 스크립트가 실행되는 시간 전체에 대해서 존재하거나 또는 존재하지 않게 된다. 이것은 스크립트의 실행 중간에 키를 만료되는 것을 방지하고, 데이터 셋에 대해 동일한 영향을 가지는 것을 보장하는 방식으로 동일한 스크립트를 리플리카로 보내기 위해서 필요로하다.
 
-Once a replica is promoted to a master it will start to expire keys independently, and will not require any help from its old master.
+한 번 리플리카가 마스터로 승격되면, 독립적으로 키를 만료시키기 시작하고, 이전 마스터로부터의 어떤 도움도 요구하지 않는다.
 
 Configuring replication in Docker and NAT
 ---
