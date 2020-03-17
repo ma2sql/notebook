@@ -80,9 +80,9 @@ Replication ID explained
 Diskless replication
 ---
 
-Normally a full resynchronization requires creating an RDB file on disk, then reloading the same RDB from disk in order to feed the replicas with the data.
+일반적으로 전체 재동기화(full resynchronization)는 디스크 상에 RDB를 파일로 만들어야하고, 그리고 나서 리플리카에게 데이터를 공급하기 위해서 그 RDB 파일을 디스크로부터 다시 로딩한다.
 
-With slow disks this can be a very stressing operation for the master. Redis version 2.8.18 is the first version to have support for diskless replication. In this setup the child process directly sends the RDB over the wire to replicas, without using the disk as intermediate storage.
+느린 디스크를 사용하는 마스터에게는 이것은 매우 스트레스를 주는 오퍼레이션이다. 레디스 2.8.18 버전은 디스크없는(diskless) 리플리케이션을 지원하는 첫 번째 버전이다. 이 설정은 자식 프로세스가 중간 저장소로써 디ㅅ크를 사용하지 않고 직접 RDB를 네트워크(wire)를 통해 리플리카로 보낸다.
 
 Configuration
 ---
