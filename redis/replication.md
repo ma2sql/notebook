@@ -87,15 +87,15 @@ Diskless replication
 Configuration
 ---
 
-To configure basic Redis replication is trivial: just add the following line to the replica configuration file:
+기본 레디스 리플리케이션을 구성하는 것은 별로 어렵지 않다(trival): 단지 다음의 열을 리플리카의 구성 파일에 추가하면 된다:
 
     replicaof 192.168.1.1 6379
 
-Of course you need to replace 192.168.1.1 6379 with your master IP address (or hostname) and port. Alternatively, you can call the `REPLICAOF` command and the master host will start a sync with the replica.
+물론 `192.168.1.1 6379`을 당신의 마스터의 IP(또는 호스트네임)과 포트로 바꿀 필요가 있다. 그렇지 않으면, `REPLICAOF` 커맨드를 호출할 수 있으며, 마스터 호스트는 리플리카와의 동기화를 시작할 것이다.
 
-There are also a few parameters for tuning the replication backlog taken in memory by the master to perform the partial resynchronization. See the example `redis.conf` shipped with the Redis distribution for more information.
+또한, 마스터가 부분 재동기화를 수행하기 위해서, 메모리를 사용하는 리플리케이션 백로그를 튜닝하기 위한 몇가지 파라미터 있다. 마스터가 메모리를 취하는. 해서. `redis.conf`의 예를 보세요. 자세한 정보는 레디스 배포판에 포함되어 있는 `redis.conf` 예제를 참고하라.
 
-Diskless replication can be enabled using the `repl-diskless-sync` configuration parameter. The delay to start the transfer in order to wait for more replicas to arrive after the first one is controlled by the `repl-diskless-sync-delay` parameter. Please refer to the example `redis.conf` file in the Redis distribution for more details.
+디스크없는 리플리케이션은 `repl-diskless-sync` 구성 파라미터를 이용해서 활성화될 수 있다. 첫 번째 리플리카의 연결 이후, 좀 더 많은 리플리카가 연결을 기다리기 위해서, 전송의 시작에 대한 지연은 `repl-diskless-sync-delay` 파라미터에 의해 제어된다. 자세한 내용은 레디스 배포판의 `redis.conf` 파일을 참고하라.
 
 Read-only replica
 ---
