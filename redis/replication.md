@@ -100,23 +100,23 @@ Configuration
 Read-only replica
 ---
 
-Since Redis 2.6, replicas support a read-only mode that is enabled by default. This behavior is controlled by the `replica-read-only` option in the redis.conf file, and can be enabled and disabled at runtime using `CONFIG SET`.
+레디스 2.6 이후, 리플리카는 읽기 전용 모드를 지원하는데 이것은 기본적으로 활성화되어 있다. 이 동작은 redis.conf의 `replica-read-only`(`slave-read-only`) 옵션에 의해 제어된다. 그리고 `CONFIG SET`을 이용해서 런타임으로 활성화 또는 비활성화하는 것이 가능하다.
 
-Read-only replicas will reject all write commands, so that it is not possible to write to a replica because of a mistake. This does not mean that the feature is intended to expose a replica instance to the internet or more generally to a network where untrusted clients exist, because administrative commands like `DEBUG` or `CONFIG` are still enabled. However, security of read-only instances can be improved by disabling commands in redis.conf using the `rename-command` directive.
+읽기 전용(read-only) 리플리카는 모든 쓰기를 거부하므로, 실수로 리플리카에 쓰기를 하는 것은 가능하지 않다. 이것은 이 기능이 리플리카를 인터넷이나 좀 더 일반적으로 신뢰할 수 없는 클라이언트가 존재하는 네트워크에 노출하려는 의도가 있다는 의미는 아닌데, `DEBUG`와 같은 관리자 커맨드가 여전히 활성화되기 때문이다. 그러나, 읽기 전용 인스턴스의 보안은 redis.conf에서 `rename-command` 지시자를 이용해서 커맨드를 비활성화시킴으로써 향상될 수 있다.
 
-You may wonder why it is possible to revert the read-only setting and have replica instances that can be targeted by write operations. While those writes will be discarded if the replica and the master resynchronize or if the replica is restarted, there are a few legitimate use case for storing ephemeral data in writable replicas.
+당신은 아마 왜 읽기 전용의 설정을 되돌리고, 쓰기 오퍼레이션의 대상이 될 수 있는 인스턴스를 만들려고 하는지 궁금할 수 있다. 그러한 쓰기들은 리플리카와 마스터의 재동기화나 리플리카가 재시작된다면 버려지지만, 임시적인(또는 삭제 가능한) 데이터를 쓰기가 가능한 리플리카에 저장하기 위한 몇 가지 합리적인 사용 케이스가 있다. 
 
-For example computing slow Set or Sorted set operations and storing them into local keys is an use case for writable replicas that was observed multiple times.
+예를 들어, 느린 `Set`이나 `Sorted set` 오퍼레이션의 계산과 그러한 것들을 로컬 키로 저장하려는 것은 여러 번 (또는 자주) 목격되는 쓰기가 가능한 리플리카의 사용 예이다. 
 
-However note that **writable replicas before version 4.0 were incapable of expiring keys with a time to live set**. This means that if you use `EXPIRE` or other commands that set a maximum TTL for a key, the key will leak, and while you may no longer see it while accessing it with read commands, you will see it in the count of keys and it will still use memory. So in general mixing writable replicas (previous version 4.0) and keys with TTL is going to create issues.
+하지만 **4.0 버전 이전의 쓰기가 가능한 리플리카는 TTL 설정을 가진 키의 만료시키는 것은 할 수가 없다**는 것을 주의해야한다. 이것은 임의의 키에 대해서 최대 TTL값을 설정하는 `EXPIRE` 또는 다른 커맨드를 사용하면, 키는 누락될 것이고, 읽기 커맨드로 그 키에 접근하려고 할 때에는 그 키를 더 이상 볼 수 없을 수도 있지만, 키의 집계에서 볼 수 있고, 여전히 메모리에도 남아있을 것이다. 그래서 일반적으로 쓰기가 가능한 리플리카(4.0 이전의 버전)와 TTL을 가지는 키를 혼합하면 문제가 발생할 것이다.
 
-Redis 4.0 RC3 and greater versions totally solve this problem and now writable replicas are able to evict keys with TTL as masters do, with the exceptions of keys written in DB numbers greater than 63 (but by default Redis instances only have 16 databases).
+레디스 4.0 RC3과 그 이상의 버전에서는 완전히 이 문제를 해결했고, 이제는 쓰기가 가능한 리플리카는 마스터가 하는 것처럼 TTL을 가진 키들을 축출(evict)해낼 수 있는데, **63**보다 큰 DB 에서 쓰여진 키들은 제외된다. (그러나 기본적으로 레디스 인스턴스는 16개의 데이터베이스만을 가진다.)
 
-Also note that since Redis 4.0 replica writes are only local, and are not propagated to sub-replicas attached to the instance. Sub-replicas instead will always receive the replication stream identical to the one sent by the top-level master to the intermediate replicas. So for example in the following setup:
+또한 레디스 4.0 이후에는 리플리카 쓰기는 오직 로컬에서만이고, 그 인스턴스의 하위(sub) 리플리카로 연결된 인스턴스로는 전파되지는 않는다는 점을 주의해야한다. 대신 하위(sub) 리플리카는  항상 최상위 마스터가 중간 리플리카로 보내는 것과 동일한 리플리케이션 스트림을 수신한다. 다음의 구성을 예로 들면:
 
     A ---> B ---> C
 
-Even if `B` is writable, C will not see `B` writes and will instead have identical dataset as the master instance `A`.
+`B`가 쓰기가 가능하더라도, `C`는 `B`의 쓰기를 보지 않고, 대신 마스터 인스턴스 `A`와 같은 동일한 데이터 셋을 가진다.
 
 Setting a replica to authenticate to a master
 ---
