@@ -121,41 +121,41 @@ Read-only replica
 Setting a replica to authenticate to a master
 ---
 
-If your master has a password via `requirepass`, it's trivial to configure the replica to use that password in all sync operations.
+만약, 마스터가 `requirepass`를 이용해서 패스워드를 지정했다면, 모든 동기화 오퍼레이션에 대해서 리플리카가 패스워드를 사용하도록 하는 것은 어렵지 않다.
 
-To do it on a running instance, use `redis-cli` and type:
+실행중인 인스턴스에 수행하기 위해서는 `redis-cli`을 이용하고, 다음과 같이 입력한다:
 
     config set masterauth <password>
 
-To set it permanently, add this to your config file:
+영구적으로 적용하기 위해서는, 설정 파일(redis.conf)에 이 옵션을 추가한다:
 
     masterauth <password>
 
 Allow writes only with N attached replicas
 ---
 
-Starting with Redis 2.8, it is possible to configure a Redis master to accept write queries only if at least N replicas are currently connected to the master.
+Redis 2.8부터, 현재 적어도 N개의 리플리카가 마스터로 연결되었을 때에만 레디스 마스터가 쓰기 쿼리를 받아들이도록 하는 것이 가능하다. 
 
-However, because Redis uses asynchronous replication it is not possible to ensure the replica actually received a given write, so there is always a window for data loss.
+그러나, 레디스는 비동기 리플리케이션(asynchronous replication)을 사용하기 때문에, 리플리카가 실제로 지정된 쓰기를 전달받았는지를 보장하는 것은 가능하지 않다. 그래서 데이터 손실이 가능한 시간대는 항상 존재한다.
 
-This is how the feature works:
+아래는 이 기능이 동작하는 방법에 대한 것이다:
 
-* Redis replicas ping the master every second, acknowledging the amount of replication stream processed.
-* Redis masters will remember the last time it received a ping from every replica.
-* The user can configure a minimum number of replicas that have a lag not greater than a maximum number of seconds.
+* 레디스 리플리카는 매 초마다 마스터에 핑을 보내며 처리된 복제 스트림의 양에 대한 응답한다.
+* 레디스 마스터는 모든 리플리카 각각으로부터 핑을 받은 가장 최근 시간을 기억한다.
+* 유저는 초(second) 단위로 지정된 최대 시간보다 작은 지연 시간을 가지는 리플리카의 최소 수를 설정할 수 있다.
 
-If there are at least N replicas, with a lag less than M seconds, then the write will be accepted.
+만약, M초보다 더 적은 지연(lag)를 가지는 리플리카가 적어도 N개 있다면, 쓰기는 받아들여질 것이다.
 
-You may think of it as a best effort data safety mechanism, where consistency is not ensured for a given write, but at least the time window for data loss is restricted to a given number of seconds. In general bound data loss is better than unbound one.
+주어진 쓰기(write)에 대해서 일관성은 보장하지 않지만, 적어도 데이터 손실이 가능한 시간을 지정된 시간(초)로 제한시키는 것은 최선의 데이터 안정 메커니즘이라고 생각해볼 수 있다. 일반적으로 데이터 손실에 경계를 두는 것이 없는 것보다는 낫다.
 
-If the conditions are not met, the master will instead reply with an error and the write will not be accepted.
+만약 조건을 만족시키지 않는다면, 마스터는 대신 에러를 응답할 것이고, 쓰기(write)를 받아들이지 않을 것이다.
 
-There are two configuration parameters for this feature:
+이 기능과 관련된 두 가지 파라미터가 있다:
 
 * min-replicas-to-write `<number of replicas>`
 * min-replicas-max-lag `<number of seconds>`
 
-For more information, please check the example `redis.conf` file shipped with the Redis source distribution.
+좀 더 상세한 정보는, 레디스 소스 배포판에 함께 포함된 예제 `redis.conf` 파일을 참고하라.
 
 How Redis replication deals with expires on keys
 ---
@@ -173,25 +173,25 @@ How Redis replication deals with expires on keys
 Configuring replication in Docker and NAT
 ---
 
-When Docker, or other types of containers using port forwarding, or Network Address Translation is used, Redis replication needs some extra care, especially when using Redis Sentinel or other systems where the master `INFO` or `ROLE` commands output are scanned in order to discover replicas' addresses.
+도커나 포트 포워딩을 이용하는 기타 다른 종류의 컨테이너, 또는 네트워크 주소 변환(Network Address Translation) 사용될 때, 레디스 리플리케이션은 좀 더 추가적인 처리가 필요한데, 특히 리플리카의 주소를 발견하기 위해서 마스터의 `INFO`나 `ROLE`커맨드 출력결과를 스캔하는 레디스 센티널이나 기타 다른 시스템이 사용될 때가 그러하다.
 
-The problem is that the `ROLE` command, and the replication section of the `INFO` output, when issued into a master instance, will show replicas as having the IP address they use to connect to the master, which, in environments using NAT may be different compared to the logical address of the replica instance (the one that clients should use to connect to replicas).
+문제는 마스터 인스턴스에서 실행된 `ROLE`커맨드 또는 `INFO`커맨드의 replication 섹션의 출력 결과는 리플리카가 마스터로 연결하기 위해서 사용한 IP주소를 보여주는데, NAT를 사용하는 환경 등에서의 (클라이언트가 리플리카로 연결하기 위해 사용하는) 리플리카의 논리적인 주소와 비교해 다를 수 있다.
 
-Similarly the replicas will be listed with the listening port configured into `redis.conf`, that may be different than the forwarded port in case the port is remapped.
+마찬가지로 리플리카는 `redis.conf`에 설정된 리스닝 포트와 함께 나열되는데, 포트가 다시 맵핑되는 경우에는 포워드되는 포트와는 다를 수 있다.
 
-In order to fix both issues, it is possible, since Redis 3.2.2, to force a replica to announce an arbitrary pair of IP and port to the master.
+두 가지 이슈를 수정하기 위해서, Redis 3.2.2 부터는 리플리카가 임의의 IP와 포트 번호의 쌍을 마스터에게 전달하도록 강제하는 것이 가능하다.
 
-The two configurations directives to use are:
+사용해야하는 설정 지시자는 다음과 같다:
 
     replica-announce-ip 5.5.5.5
     replica-announce-port 1234
 
-And are documented in the example `redis.conf` of recent Redis distributions.
+그리고 최신의 레디스 배포판의 `redis.conf` 예졔에 문서화되어 있다.
 
 The INFO and ROLE command
 ---
 
-There are two Redis commands that provide a lot of information on the current replication parameters of master and replica instances. One is `INFO`. If the command is called with the `replication` argument as `INFO replication` only information relevant to the replication are displayed. Another more computer-friendly command is `ROLE`, that provides the replication status of masters and replicas together with their replication offsets, list of connected replicas and so forth.
+마스터와 리플리카 인스턴스의 현재 리플리케이션 파라미터에 관한 많은 정보를 제공하는 2개의 레디스 커맨드가 있다. 첫째는 `INFO` 커맨드이다. `INFO replication`처럼 `replication` 인자와 함께 호출되면, 리플리케이션과 관련된 정보만 화면에 표시된다. 또, 다른 컴퓨터 친화적인 커맨드는 `ROLE`로써, 리플리케이션 오프셋과 연결된 리플리카의 목록 등과 함께, 마스터와 리플리카의 리플리케이션 상태에 대한 정보를 제공한다.
 
 Partial resynchronizations after restarts and failovers
 ---
