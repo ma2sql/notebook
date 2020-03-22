@@ -32,17 +32,17 @@ The following are some very important facts about Redis replication:
 Safety of replication when master has persistence turned off
 ---
 
-In setups where Redis replication is used, it is strongly advised to have persistence turned on in the master and in the replicas. When this is not possible, for example because of latency concerns due to very slow disks, instances should be configured to **avoid restarting automatically** after a reboot.
+레디스 리플리케이션이 사용되는 설정에서는 영속성(persistence)을 마스터와 리플리카에서 켜는 것이 매우 권장된다. 예를 들어 매우 느린 디스크 때문에 응답 시간(latency)이 우려되거나 하는 등의 이유로 이렇게 할 수 없을 때, 인스턴스는 서버의 재기동 이후에 **자등으로 재시작되지 않도록** 구성이 되어야 한다.
 
-To better understand why masters with persistence turned off configured to auto restart are dangerous, check the following failure mode where data is wiped from the master and all its replicas:
+왜 영속성(persistence)을 비활성화한 마스터가 자동으로 재시작하도록 구성하는 것이 위험한지에 대해서 더 잘 이해하기 위해서는, 마스터와 모든 리플리카에서 데이터가 삭제되어버릴 수 있는 실패 케이스를 체크해야한다:
 
-1. We have a setup with node A acting as master, with persistence turned down, and nodes B and C replicating from node A.
-2. Node A crashes, however it has some auto-restart system, that restarts the process. However since persistence is turned off, the node restarts with an empty data set.
-3. Nodes B and C will replicate from node A, which is empty, so they'll effectively destroy their copy of the data.
+1. 노드 A를 영속성이 비활성화된 마스터로, 그리고 노드 B와 C가 A를 복제하도록 셋업한다. 
+2. 노드 A는 크래시되지만, 자동으로 재시작하는 시스템을 가지고 있어, 레디스 프로세스는 결국 재시작될 것이다. 하지만 영속성이 비활성화되어 있기 때문에, 마스터 노드는 빈 데이터 셋으로 재시작한다.
+3. 노드 B와 C는 빈 데이터 셋을 가진 노드 A로부터 복제할 것이고, 그래서 사실상 데이터 셋의 복제본은 모두 소실될 것이다.
 
-When Redis Sentinel is used for high availability, also turning off persistence on the master, together with auto restart of the process, is dangerous. For example the master can restart fast enough for Sentinel to not detect a failure, so that the failure mode described above happens.
+고가용성(High Availability)을 위해 레디스 센티널을 사용할 때, 자동으로 프로세스를 재시작하는 시스템을 가진 마스터에서 영속성을 비활성화하는 것 또한 위험하다. 예를 들어, 마스터는 센티널이 실패를 감지하지 못할만큼 빠르게 재시작될 수 있고, 따라서 위에서 설명한 실패 케이스가 발생한다.
 
-Every time data safety is important, and replication is used with master configured without persistence, auto restart of instances should be disabled.
+데이터 안전성이 중요하고, 영속성 없이 구성된 마스터가 리플리케이션에 사용될 때에는, 인스턴스의 자동 재시작은 반드시 비활성화되어야 한다.
 
 How Redis replication works
 ---
