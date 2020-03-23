@@ -11,23 +11,19 @@ Replication
 
 레디스는 적은 지연 시간과 높은 성능의 비동기 리플리케이션을 기본적으로 사용하고, 이것은 대부분의 레디스 사용 케이스에서 일반적인 복제 모드이다. 그러나 레디스 리플리카는 마스터로부터 주기적으로 전달받은 데이터의 양에 대해서 비동기적으로 응답한다. 그래서 마스터는 리플리카에 의해 처리된 커맨드에 대해서 매번 대기하지 않지만, 필요하면 무슨 리플리카가 이미 무슨 커맨드를 처리를 했는지를 알 수 있다. 이것으로 선택적인 동기 복제가 가능하다.
 
-Synchronous replication of certain data can be requested by the clients using the `WAIT` command. However `WAIT` is only able to ensure that there are the specified number of acknowledged copies in the other Redis instances, it does not turn a set of Redis instances into a CP system with strong consistency: acknowledged writes can still be lost during a failover, depending on the exact configuration of the Redis persistence. However with `WAIT` the probability of losing a write after a failure event is greatly reduced to certain hard to trigger failure modes.
+특정 데이터의 동기 복제는 클라이언트가  `WAIT` 커맨드를 요청함으로써 가능하다. 하지만 `WAIT`는 다른 레디스 인스턴스에서 지정된 수의 응답이 있었다는 것만을 보장하며, CP 시스템으로서의 강한 일관성을 제공해주지는 않는다: 응답을 받은 쓰기는 페일오버 동안에 여전히 손실이 될 수 있으며, 이는 레디스 영속성의 관련된 설정에 의존적이다. 그러나 `WAIT` 커맨드로 인해, 실패 이벤트 이후의 데이터 손실의 가능성에 대해서는 실패 케이스가 발생하기 매우 어려울만큼 크게 줄일 수가 있다.
 
-특정 데이터의 동기 복제는 클라이언트로가 `WAIT`커맨드가 요청함으로써 가능하다. 그러나 `WAIT`는 다른 레디스 인스턴스에서 응답이 오직 지정된 수 만큼 있었다는 것만을 보장하며, CP시스템으로써 강한 일관성을 제공해주지는 않는다. 응답된 쓰기는 여전히 페일오버 서점에 손실될 수 있으며, 레디스 영속성의 관련된 설정에 달려있다. 그러나 `WAIT`커맨드로 실패 이벤트 이후의 데이터 손실 가능성을 매우 줄일 수 있다.
+고가용성(High Availability)와 페일오버에 대한 좀 더 상세한 정보에 대해서는 센티널 또는 클러스터 문서를 확인해야한다. 이 문서의 나머지 부분에서는 주로 레디스 기본 리플리케이션(Redis basic replication) 의 특성에 대해서 설명한다.
 
+다음은 레디스 리플리케이션과 관련한 몇 가지 매우 중요한 사실(facts)이다:
 
-You could check the Sentinel or Redis Cluster documentation for more information
-about high availability and failover. The rest of this document mainly describe the basic characteristics of Redis basic replication.
-
-The following are some very important facts about Redis replication:
-
-* Redis uses asynchronous replication, with asynchronous replica-to-master acknowledges of the amount of data processed.
-* A master can have multiple replicas.
-* Replicas are able to accept connections from other replicas. Aside from connecting a number of replicas to the same master, replicas can also be connected to other replicas in a cascading-like structure. Since Redis 4.0, all the sub-replicas will receive exactly the same replication stream from the master.
-* Redis replication is non-blocking on the master side. This means that the master will continue to handle queries when one or more replicas perform the initial synchronization or a partial resynchronization.
-* Replication is also largely non-blocking on the replica side. While the replica is performing the initial synchronization, it can handle queries using the old version of the dataset, assuming you configured Redis to do so in redis.conf.  Otherwise, you can configure Redis replicas to return an error to clients if the replication stream is down. However, after the initial sync, the old dataset must be deleted and the new one must be loaded. The replica will block incoming connections during this brief window (that can be as long as many seconds for very large datasets). Since Redis 4.0 it is possible to configure Redis so that the deletion of the old data set happens in a different thread, however loading the new initial dataset will still happen in the main thread and block the replica.
-* Replication can be used both for scalability, in order to have multiple replicas for read-only queries (for example, slow O(N) operations can be offloaded to replicas), or simply for improving data safety and high availability.
-* It is possible to use replication to avoid the cost of having the master writing the full dataset to disk: a typical technique involves configuring your master `redis.conf` to avoid persisting to disk at all, then connect a replica configured to save from time to time, or with AOF enabled. However this setup must be handled with care, since a restarting master will start with an empty dataset: if the replica tries to synchronized with it, the replica will be emptied as well.
+* 레디스는 리플리카에서 마스터(replica-to-master)로 처리한 데이터의 양에 대한 비동기적인 응답을 포함하는, 비동기 리플리케이션(asynchronous replication)을 사용한다.
+* 하나의 마스터는 여러 리플리카를 가질 수 있다.
+* 리플리카는 다른 리플리카로부터의 커넥션을 받아들일 수 있다. 동일한 마스터로 여러 리플리카가 연결하는 것 이외에도, 리플리카 또한 캐스케이딩(cascading)과 같은 구조로 다른 리플리카들로 연결될 수 있다. 레디스 4.0 부터는, 모든 하위 리플리카는 정확히 동일한 복제 스트림을 마스터로부터 받게 된다.
+* 레디스 리플리케이션은 마스터 측에서는 논블로킹(non-blocking)이다. 이것은 마스터가 하나 또는 그 이상의 리플리카가 초기 동기화나 부분 재동기화를 수행할 때에도 쿼리를 계속해서 처리할 수 있다는 것을 의미한다.
+* 리플리케이션은 리플리카 측에서도 대부분이 논블로킹(non-blocking)이다. 리플리카가 초기 동기화를 수행하고 있는 동안에 오래된 버전의 데이터 셋을 이용해서 쿼리를 처리할 수가 있는데, 이는 redis.conf 내에 이러한 것이 가능하도록 설정되어 있다라는 것을 전제로 한다. 반대로, 리플리케이션 스트림이 멈춘 상태라면, 레디스 리플리카가 클라이언트에게 에러를 반환하도록 설정할 수도 있다. 그러나 초기 동기화 이후에, 오래된 데이터 셋은 반드시 지워져야하며, 새로운 데이터 셋이 로드되어야 한다. 리플리카는 이 짧은 시간(매우 큰 데이터 셋의 경우에는 많은 시간(초)가 될 수 있는) 동안에 유입되는 커낵션을 차단할 것이다. 레디스 4.0 이후에는 레디스가 오래된 데이터 셋의 삭제를 다른 스레드에서 발생시키는 것이 가능하지만, 새로운 초기 데이터 셋을 로딩하는 것은 여전히 메인 스레드에서 발생하며, 리플리카를 차단할 것이다.
+* 리플리케이션은 읽기 전용(read-only) 쿼리에 대해서 여러 리플리카를 가지기 위한 (예를, 들면 느린 O(N) 오퍼레이션은 리플리카로 떠넘기는) 확장(scalability)의 용도에 사용될 수 있으며, 또는 단순히 데이터 안정성과 고가용성을 향상 시키기 위한 용도로도 사용될 수 있다.
+* 마스터가 전체 데이터 셋을 디스크에 저장하는 비용을 줄이기 위해서 리플리케이션을 사용하는 것은 가능하다: 일반적인 테크닉은 마스터의 `redis.conf`는 디스크에 영속성을 전혀 처리하지 않도록 설정하고, 그리고 나서 리플리카는 가끔씩 디스크에 저장하도록 구성하거나, 또는 AOF를 활성화시키는 것을 의미한다. 그러나 이 설정은 마스터의 재시작하면 빈 데이터 셋으로 시작되는 되기 때문에 조심스럽게 다루어져야 한다: 만약 리플리카가 빈 데이터 셋과 전체 동기화를 시도하면, 리플리카 또한 빈 데이터 셋을 가지게 된다.
 
 Safety of replication when master has persistence turned off
 ---
