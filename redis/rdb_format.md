@@ -225,25 +225,26 @@ zipmap을 파싱하려면, 우선 문자열을 스트림에서 "문자열 인코
 
 ## Ziplist Encoding
 
-A Ziplist is a list that has been serialized to a string. In essence, the elements of the list are stored sequentially along with flags and offsets to allow efficient traversal of the list in both directions.
+ziplist는 문자열로 직렬화된 리스트이다. 본질적으로, 리스트의 엘리먼트들은 양방향으로 리스트를 효율적으로 순회할 수 있도록 플래그와 오프셋과 함께 연속적으로 저장된다. 
 
-To parse a ziplist, first a string is read from the stream using "String Encoding". This string is the envelope of the ziplist. The contents of this string represent the ziplist.
+ziplist를 파싱하려면, 우선 스트림에서 문자열을 "문자열 인코딩 (String Encoding)"을 이용해서 읽는다. 이 문자열은 ziplist로 감싸여져 있다. 문자열의 내용은 ziplist로 나타난다.
 
-The structure of a ziplist within this string is as follows -
+이 문자열 내 ziplist의 구조는 다음과 같다 -
 
 `<zlbytes><zltail><zllen><entry><entry><zlend>`
 
-1. *zlbytes* : This is a 4 byte unsigned integer representing the total size in bytes of the zip list. The 4 bytes are in little endian format - the least signinficant bit comes first.
-2. *zltail* : This is a 4 byte unsigned integer in little endian format. It represents the offset to the tail (i.e. last) entry in the zip list
-3. *zllen* : This is a 2 byte unsigned integer in little endian format. It represents the number of entries in this zip list
-4. *entry* : An entry represents an element in the zip list. Details below
-5. *zlend* : Is always equal to `255`. It represents the end of the zip list.
+1. *zlbytes* : 이것은 4바이트의 부호없는 정수형으로 ziplist의 전체 크기를 바이트로 표시한다. 4바이트는 리틀 엔디안(little endian) 포맷이다. (최하위 비트가 첫 위치로 온다.)
+2. *zltail* : 이것은 4바이트의 부호없는 정수형으로 리틀 엔디안 포맷이다. ziplist 내의 끝부분, 즉 마지막 엔트리에 대한 오프셋을 나타낸다.
+3. *zllen* : 이것은 2바이트의 부호없는 정수형으로 리틀 엔디안 포맷이다. ziplist내의 엔트리 개수를 나타낸다.
+4. *entry* : ziplist내의 엔트리를 나타낸다. 자세한 것은 아래를 참고
+5. *zlend* : 이것은 항상 `255`이다. ziplist의 끝을 나타낸다.
 
-Each entry in the zip list has the following format :
+
+ziplist내의 각 엔트리는 다음과 같은 포맷을 가진다 :
 
 `<length-prev-entry><special-flag><raw-bytes-of-entry>`
 
-*length-prev-entry* : This field stores the length of the previous entry, or 0 if this is the first entry. This allows easy traversal of the list in the reverse direction. This length is stored in either 1 byte or in 5 bytes. If the first byte is less than or equal to 253, it is considered as the length. If the first byte is 254, then the next 4 bytes are used to store the length. The 4 bytes are read as an unsigned integer.
+*length-prev-entry* : 이 필드는 이전 엔트리의 길이를 저장하는데, 만약 첫 번째 엔트리라면 0을 저장한다. 이것은 리스트를 역방향으로 쉽게 탐색할 수 있게 해준다. 이 길이는 1바이트 또는 5바이트로 저장된다. 만약 첫 바이트가 253보다 같거나 작으면, 길이로 간주된다. 첫 바이트가 254라면, 그 다음 4바이트가 길이를 저장히기 위해 사용된다. 4바이트는 부호없는 정수형으로 해셕된다.
 
 *Special flag* : This flag indicates whether the entry is a string or an integer. It also indicates the length of the string, or the size of the integer. 
 The various encodings of this flag are shown below :
