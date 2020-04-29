@@ -7,6 +7,12 @@
 * `-v`: TTL, 식별 정보, IP 패킷 내의 총 길이와 옵션 등의 정보를 모두 표기한다. (`-vv`, `-vvv` 등은 NFS, SMB, telnet 옵션 등을 추가적으로 표기해준다.)
 * `-S`: 절대값 시퀀스 번호를 출력한다. (상대값이 아닌)
 
+## Usage
+- eth0, 7001포트로 들어오는 패킷을 ASCII 형태로 출력
+```
+tcpdump -i eth0 dst port 7001 -ttttnnSvA
+```
+
 
 ## 참고
 * https://linoxide.com/linux-how-to/14-tcpdump-commands-capture-network-traffic-linux/#13_Capture_both_incoming_and_outgoing_packets_of_a_specific_host

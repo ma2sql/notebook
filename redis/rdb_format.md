@@ -9,78 +9,79 @@ rdb파일 포맷은 빠른 읽기와 쓰기를 위해 최적화되어 있다. LZ
 ## High Level Algorithm to parse RDB
 
 At a high level, the RDB file has the following structure
+고수준에서, RDB 파일은 다음과 같은 구조를 가진다.
 
 ```
-----------------------------# RDB is a binary format. There are no new lines or spaces in the file.
-52 45 44 49 53              # Magic String "REDIS"
-30 30 30 37                 # 4 digit ASCCII RDB Version Number. In this case, version = "0007" = 7
+----------------------------# RDB는 바이너리 포맷이다. 파일내에 새로운 행(new line)이나 공백은 없다.
+52 45 44 49 53              # 매직 스트링(Magic String)은 "REDIS"이다.
+30 30 30 37                 # 4자리의 ASCCII RDB 버전 숫자. 여기서는 version = "0007" = 7
 ----------------------------
-FE 00                       # FE = code that indicates database selector. db number = 00
-----------------------------# Key-Value pair starts
-FD $unsigned int            # FD indicates "expiry time in seconds". After that, expiry time is read as a 4 byte unsigned int
-$value-type                 # 1 byte flag indicating the type of value - set, map, sorted set etc.
-$string-encoded-key         # The key, encoded as a redis string
-$encoded-value              # The value. Encoding depends on $value-type
+FE 00                       # FE = 데이터베이스 선택자를 표시하는 코드. db number == 00
+----------------------------# 키-값 쌍이 시작됨
+FD $unsigned int            # FD는 "초 단위의 만료시간을 표기한다". 그 후, 만료 시간은 부호없는 4바이트의 정수로 읽힌다.
+$value-type                 # 1 바이트 플래그는 값(value)의 타입을 표시한다. - set, map, sorted set 등등
+$string-encoded-key         # 레디스 문자열(string)으로 인코딩된 키(key)
+$encoded-value              # 값(value). 값의 타입($value-type)에 따라 다르다.
 ----------------------------
-FC $unsigned long           # FC indicates "expiry time in ms". After that, expiry time is read as a 8 byte unsigned long
-$value-type                 # 1 byte flag indicating the type of value - set, map, sorted set etc.
-$string-encoded-key         # The key, encoded as a redis string
-$encoded-value              # The value. Encoding depends on $value-type
+FC $unsigned long           # FC는 밀리초(ms)의 만료 시간을 나타낸다. 그 후, 만료 시간은 8바이트의 부호없는 long 타입으로 읽혀진다.
+$value-type                 # 값(value)의 타입을 나타내는 1 바이트의 플래그. set, map, sorted set, etc..
+$string-encoded-key         # 레디스 문자열 (redis string)으로 인코딩된 키 (key)
+$encoded-value              # $value-type에 따라 인코딩된 값 (value)
 ----------------------------
-$value-type                 # This key value pair doesn't have an expiry. $value_type guaranteed != to FD, FC, FE and FF
+$value-type                 # 이 키-값(key-value) 쌍은 만료 시간을 가지지 않는다, $value_type이 FD, FC, FE, FF가 아닌 것을 보장한다.
 $string-encoded-key
 $encoded-value
 ----------------------------
-FE $length-encoding         # Previous db ends, next db starts. Database number read using length encoding.
+FE $length-encoding         # 이전 db가 끝나고, 다음 db가 시작된다. 데이터베이스 번호는 인코딩 길이 (length-encodig)를 사용해서 읽어진다.
 ----------------------------
-...                         # Key value pairs for this database, additonal database
+...                         # 이 데이터베이스에 대한 키-값 쌍들, 그리고 추가적인 데이터베이스
                             
-FF                          ## End of RDB file indicator
-8 byte checksum             ## CRC 64 checksum of the entire file.
+FF                          ## RDB파일의 끝에 대한 지시자
+8 byte checksum             ## 전체 파일의 CRC 64 체크섬(checksum)
 ```
 
 ### Magic Number
 
-The file starts off with the magic string "REDIS". This is a quick sanity check to know we are dealing with a redis rdb file.
+파일은 매직 문자열 "REDIS"와 함께 시작된다. 이것은 우리가 rdb 파일을 다루고 있음을 알기 위한, 빠른 새너티 체크(sanity check)이다.
 
 `52 45 44 49 53  # "REDIS"`
 
 ### RDB Version Number
 
-The next 4 bytes store the version number of the rdb format. The 4 bytes are interpreted as ascii characters and then converted to an integer using string to integer conversion.
+다음 4바이트는 rdb 포맷의 버전 번호를 저장한다. 4바이트는 아스키 문자열로 해석된 다음, 정수형으로 변환되는데, 이때 문자열과 정수형 컨버전을 이용한다.
 
 `00 00 00 03 # Version = 3`
 
 ### Database Selector
 
-A Redis instance can have multiple databases.
+레디스 인스턴스는 여러 개의 데이터베이스를 보유할 수 있다.
 
-A single byte `0xFE` flags the start of the database selector. After this byte, a variable length field indicates the database number. See the section "Length Encoding" to understand how to read this database number.
+단일 바이트 `0xFE`는 데이터베이스 선택자(selector)의 시작을 표시한다. 이 바이트 다음에, 변수 길이 필드는 데이터베이스 번호를 표시한다. 데이터베이스 번호를 읽는 방법을 이해하려면, 다음 섹션인 "[Length Encoding](#length-encoding)"을 참고하라.
 
 ### Key Value Pairs
 
-After the database selector, the file contains a sequence of key value pairs.
+데이터베이스 선택자 이후, rdb 파일은 키-값 쌍의 연속을 포함한다.
 
-Each key value pair has 4 parts -
+각 키-값 쌍은 4가지 부분으로 나뉜다 -
 
-1. Key Expiry Timestamp. This is optional
-2. One byte flag indicating the value type
-3. The key, encoded as a Redis String. See "Redis String Encoding"
-4. The value, encoded according to the value type. See "Redis Value Encoding"
+1. 키 만료시간의 타임스탬프. 선택적으로 포함
+2. 값에 대한 타입을 표시하는 1바이트의 플래그
+3. 레디스 문자열(Redis String)로 인코딩돤 키. "Redis String Encoding"를 참고
+4. 값 타입(value type)에 따리 인코딩된 값. "Redis Value Encoding"를 참고
 
 #### Key Expiry Timestamp
 
-This section starts with a one byte flag. A value of `FD` indicates expiry is specified in seconds. A value of `FC` indicates expiry in specified in milliseconds.
+이 섹션은 1바이트의 플래그로 시작한다. `FD`는 만료 시간이 초 단위로 지정되었다는 것을 나타낸다. `FC`는 만료 시간이 밀리초 단위로 지정되었다는 것을 나타낸다.
 
-If time is specified in ms, the next 8 bytes represent the unix time  This number is an unix time stamp in either seconds or milliseconds precision, and represents the expiry of this key.
+만약 시간이 밀리초로 지정된다면, 다음 8바이트는 유닉스 타임(unix time)을 표현한다. 이 숫자는 초 또는 밀리초 정밀도의 유닉스 타임스탬프 (unix timestamp)이고, 이 키의 만료 시간을 나타낸다.
 
-See the section "Redis Length Encoding" on how this number is encoded.
+이 숫자가 인코딩되는 방법에 관해서는 "Redis Length Encoding" 섹션을 참고하라.
 
-During the import process, keys that have expired must be discarded.
+임포트 프로세스동안, 만료된 키는 폐기될 것이다.
 
 #### Value Type
 
-A one byte flag indicates encoding used to save the Value.
+이 1 바이트 플래그는 값을 저장하기 위해 사용되는 인코딩을 나타낸다.
 
 1. 0 =  "String Encoding"
 2. 1 =  "List Encoding"
@@ -95,130 +96,132 @@ A one byte flag indicates encoding used to save the Value.
 
 #### Key 
 
-The key is simply encoded as a Redis string. See the section "String Encoding" to learn how the key is encoded.
+키는 단순히 레디스 문자열(Redis string)로 인코딩된다. 키가 인코딩되는 방법에 대해서 알고 싶다면, "[String Encoding](#string-encoding)"를 참고하라.
 
 #### Value
 
-The encoding of the value depends on the value type flag.
+값의 인코딩은 값 타입 플래그에 따라 달라진다.
 
-- When value type = 0, the value is a simple string.
-- When value type is one of 9, 10, 11 or 12, the value is wrapped in a string. After reading the string, it must be parsed further.
-- When value type is one of 1, 2, 3 or 4, the value is a sequence of strings. This sequence of strings is used to construct a list, set, sorted set or hashmap.
+- 0일 때, 값은 단순한 문자열이다.
+- 9, 10, 11, 12 중에 하나일 때, 값은 문자열로 래핑된다. 이 문자열을 읽고 나서, 더 파싱되어야 한다.
+- 1, 2, 3, 4 중에 하나일 때, 값은 문자열의 연속(sequence)이다. 이 문자열의 연속은 리스트나, 셋, 정렬된 셋 또는 해시 맵을 구성하기 위해서 사용된다.
 
 ## Length Encoding
 
-Length encoding is used to store the length of the next object in the stream. Length encoding is a variable byte encoding designed to use as few bytes as possible.
+길이 인코딩(Length encoding)은 스트림 내의 다음 오브젝트의 길이를 저장하는데 사용된다. 길이 인코딩은 가능한 한 더 적은 바이트를 사용하도록 설계된 변수 바이트 인코딩이다.
 
-This is how length encoding works :
+이것은 길이 인코딩이 동작하는 방법이다:
 
-1. One byte is read from the stream, and the two most significant bits are read.
-2. If starting bits are `00`, then the next 6 bits represent the length
-3. If starting bits are `01`, then an additional byte is read from the stream. The combined 14 bits represent the length
-4. If starting bits are `10`, then the remaining 6 bits are discarded. Additional 4 bytes are read from the stream, and those 4 bytes represent the length (in big endian format in RDB version 6)
-5. If starting bits are `11`, then the next object is encoded in a special format. The remaining 6 bits indicate the format. This encoding is generally used to store numbers as strings, or to store encoded strings. See String Encoding
+1. 스트림으로부터 1바이트를 읽어, 최상위(most significant bits) 2비트를 읽는다.
+2. `00`으로 시작하면, 그 다음 6비트는 길이를 나타낸다.
+3. `01`로 시작하면, 스트림으로부터 추가적인 바이트를 읽어야한다. 조합된 14비트로 길이를 나타낸다.
+4. `10`으로 시작하면, 나머지 6비트는 버려진다. 스트림으로부터 추가적으로 4바이트를 읽고, 이 4바이트가 길이(RDB의 버전이 6에서는 빅 엔디안 포맷)를 나타낸다. 
+5. `11`로 시작하며느 다음 오브젝트는 특별한 포맷으로 인코딩된다. 나머지 6비트는 이 포맷을 표시한다. 이 인코딩은 일반적으로 숫자를 문자열로 저장하거나, 인코딩된 문자열을 저장하기 위해 사용된다. "[String Encoding](#string-encoding)"을 참고
 
-As a result of this encoding - 
+이 인코딩의 결과로 -
 
-1. Numbers upto and including 63 can be stored in 1 byte
-2. Numbers upto and including 16383 can be stored in 2 bytes
-3. Numbers upto 2^32 -1 can be stored in 5 bytes
+1. 63을 포함하는 숫자까지, 1바이트러 저장할 수 있다.
+2. 16383을 포함하는 숫자까지, 2바이트로 저장할 수 있다.
+3. 2^32-1을 포함하는 숫자까지는 5바이트로 저장할 수 있다.
 
 ## String Encoding
 
-Redis Strings are binary safe - which means you can store anything in them. They do not have any special end-of-string token. It is best to think of Redis Strings as a byte array.
+레디스 문자열(Redis Strings)은 바이너리에 안전하다. 이것은 무엇이든 레디스 문자열로 저장할 수 있다는 것을 의미한다. 어떤 특별한 end-of-string 토큰을 가지지 않는다. 레디스 문자열은 바이트의 배열로 생각하는 것이 가장 좋다.
 
-There are three types of Strings in Redis - 
+레디스에는 세 가지 타입의 문자열이 있다 -
 
-1. Length prefixed strings
-2. An 8, 16 or 32 bit integer
-3. A LZF compressed string
+1. 길이 접두사 문자열(Integers as String)
+2. 8, 16, 또는 32비트의 정수
+3. LZF로 압축된 문자열
 
 #### Length Prefixed String
 
-Length prefixed strings are quite simple. The length of the string in bytes is first encoded using "Length Encoding". After this, the raw bytes of the string are stored.
+길이가 접두사 문자열은 매우 간단하다. 바이트로된 문자열의 길이는 먼저 "길이 인코딩(Length Encoding)"을 이용해서 인코딩된다. 이 이후에, 문자열의 원시 바이트(raw bytes)가 저장된다.
 
 #### Integers as String
 
-First read the section "Length Encoding", specifically the part when the first two bits are `11`. In this case, the remaining 6 bits are read.
-If the value of those 6 bits is - 
+먼저 "길이 인코딩(Length Encoding)" 섹션, 특히 최상위 2비트가 `11`인 부분을 읽는다. 이 경우, 남은 6비트를 읽는다.
+만약 이 6비트의 값이 -
 
-1. 0 indicates that an 8 bit integer follows
-2. 1 indicates that a 16 bit integer follows
-3. 2 indicates that a 32 bit integer follows
+1. 0이면, 8비트의 정수가 이어진다는 것을 의미한다.
+2. 1이면, 16비트의 정수가 이어진다는 것을 의미한다.
+3. 2이면, 32비트의 정수가 이어진다는 것을 의미한다.
 
 #### Compressed Strings
 
-First read the section "Length Encoding", specifically the part when the first two bits are `11`. In this case, the remaining 6 bits are read.
-If the value of those 6 bits is 4, it indicates that a compressed string follows.
+먼저 "길이 인코딩(Length Encoding)" 섹션, 특히 최상위 2비트가 `11`인 부분을 읽는다. 이 경우, 남은 6비트를 읽는다.
+만약 이 6비트의 값이 4라면, 이것은 압축된 문자열이 이어진다는 것을 의미한다.
 
-The compressed string is read as follows - 
+압축된 문자열은 다음과 같이 읽는다 -
 
-1. The compressed length `clen` is read from the stream using "Length Encoding"
-2. The uncompressed length is read from the stream using "Length Encoding"
-3. The next `clen` bytes are read from the stream
-4. Finally, these bytes are decompressed using LZF algorithm
+1. 압축된 길이 `clen`을 스트림에서 "길이 인코딩 (Length Encoding)"을 이용해서 읽는다.
+2. 압축되지 않은 길이를 스트림에서 "길이 인코딩 (Length Encoding)"을 이용해서 읽는다.
+3. 그 다음 `clen` 바이트를 스트림에서 읽는다.
+4. 마지막으로, 이 바이트들을 LZF 알고리즘을 이용해서 압축을 해제한다.
 
 ## List Encoding
 
-A redis list is represented as a sequence of strings.
+레디스 리스트(redis list)는 문자열의 연속으로 표현된다.
 
-1. First, the size of the list `size` is read from the stream using "Length Encoding"
-2. Next, `size` strings are read from the stream using "String Encoding"
-3. The list is then re-constructed using these Strings
+1. 먼저, 리스트 `size`의 크기를 스트림에서 "길이 인코딩 (Length Encoding)"을 이용해서 읽는다.
+2. 그 다음, `size` 문자열을 스트림에서 "문자열 인코딩 (String Encoding)"을 이용해서 읽는다.
+3. 그런 다음, 이 문자열들을 이용해서 리스트를 재구성한다.
 
 ## Set Encoding
 
-Sets are encoded exactly like lists. 
+셋은 정확히 리스트처럼 인코딩된다.
 
 ## Sorted Set Encoding
 
-1. First, the size of the sorted set `size` is read from the stream using "Length Encoding"
+1. 먼저, 정렬된 셋 `size`의 크기를 스트림에서 "길이 인코딩 (Length Encoding)"을 이용해서 읽는다.
 2. TODO
 
 ## Hash Encoding
 
-1. First, the size of the hash `size` is read from the stream using "Length Encoding"
-2. Next, ` 2 * size ` strings are read from the stream using "String Encoding"
-3. Alternate strings are key and values
-4. For example, ` 2 us washington india delhi ` represents the map `{"us" => "washington", "india" => "delhi"}`
+1. 먼저, 해시 `size`의 크기를 스트림에서 "길이 인코딩 (Length Encoding)"을 이용해서 읽는다.
+2. 그 다음, `2 * size` 문자열을 스트림에서 "문자열 인코딩 (String Encoding)"을 이용해서 읽는다.
+3. 번갈아 나오는 문자열은 키와 값이다.
+4. 예를 들어, ` 2 us washington india delhi `는 맵 `{"us" => "washington", "india" => "delhi"}`로 표현된다.
 
 ## Zipmap Encoding
 
-NOTE : Zipmap encoding are deprecated starting Redis 2.6. Small hashmaps are now encoded using ziplists.
+NOTE : Zipmap 인코딩은 레디스 2.6부터 사용되지 않는다. 이제, 작은 해시맵은 ziplists를 이용해서 인코딩된다.
 
-A Zipmap is a hashmap that has been serialized to a string. In essence, the key value pairs are stored sequentially. Looking up a key in this structure is O(N). This structure is used instead of a dictionary when the number of key value pairs are small.
+zipmap은 문자열로 직렬화된 해시맵이다. 본질적으로, 키-값 쌍은 연속적으로 저장된다. 이 구조에서 키를 찾는 것은 O(N)이다. 이 구조는 키-값 쌍의 수가 적을 때, 딕셔너리 대신 사용된다.
 
-To parse a zipmap, first a string is read from the stream using "String Encoding". This string is the envelope of the zipmap. The contents of this string represent the zipmap.
+zipmap을 파싱하려면, 우선 문자열을 스트림에서 "문자열 인코딩 (String Encoding)"을 이용해서 읽는다. 이 문자열은 zipmap감싸여져 있다. 문자열의 내용은 zipmap으로 나타난다.
 
-The structure of a zipmap within this string is as follows - 
+이 문자열 내의 zipmap 구조는 다음과 같다 -
 
 `<zmlen><len>"foo"<len><free>"bar"<len>"hello"<len><free>"world"<zmend>`
 
-1. *zmlen* : Is a 1 byte length that holds the size of the zip map. If it is greater than or equal to 254, value is not used. You will have to iterate the entire zip map to find the length.
-2. *len* : Is the length of the following string, which can be either a key or a value. This length is stored in either 1 byte or 5 bytes (yes, it differs from "Length Encoding" described above). If the first byte is between 0 and 252, that is the length of the zipmap. If the first byte is 253, then the next 4 bytes read as an unsigned integer represent the length of the zipmap. 254 and 255 are invalid values for this field.
-3. *free* : This is always 1 byte, and indicates the number of free bytes _after_ the value. For example, if the value of a key is "America" and its get updated to "USA", 4 free bytes will be available.
-4. *zmend* : Always 255. Indicates the end of the zipmap.
+1. *zmlen* : 1 바이트 길이이다. zipmap의 크기를 가지고 있는 1바이트의 길이이다. 만약, 254과 같거나 크다면, 이 값은 사용되지 않는다. 길이를 찾으려면 zipmap 전체를 순회해야한다.
+2. *len* : 이어지는 문자열의 길이이다. 그리고 이 문자열은 키 또는 값이 될 수가 있다. 이 길이는 1 바이트 또는 5 바이트("길이 인코딩 (Length Encoding)"과는 다르다)로 저장된다. 만약, 첫 바이트가 0에서 252사이라면, 그것은 zipmap의 길이이다. 만약, 첫 바이트가 253이면, 그 다음 4바이트를 zipmap의 길이를 나타내는 부호 없는 정수형으로 읽는다. 254에서 255는 이 필드에서 유효하지 않은 값이다.
+3. *free* : 이것은 항상 1바이트이며, 값(value) 이후의 여유 공간 (free 바이트)의 수를 나타낸다. 예를 들어, 한 키의 값이 "America"이고, 이것이 "USA"로 업데이트된다면, 4바이트의 여유 공간이 사용 가능하게 된다.
+4. *zmend* : 항상 255. zipmap의 끝을 나타낸다.
+
 
 *Worked Example*
 
 `18 02 06 4d 4b 44 31 47 36 01 00 32 05 59 4e 4e 58 4b 04 00 46 37 54 49 ff ..`
 
-1. Start by decoding this using "String Encoding". You will notice that `18` is the length of the string. Accordingly, we will read the next 24 bytes i.e. upto `ff`
-2. Now, we are parsing the string starting at `02 06... ` using the "Zipmap Encoding"
-3. `02` is the number of entries in the hashmap.
-4. `06` is the length of the next string. Since this is less than 254, we don't have to read any additional bytes
-5. We read the next 6 bytes i.e. `4d 4b 44 31 47 36` to get the key "MKD1G6"
-6. `01` is the length of the next string, which would be the value
-7. `00` is the number of free bytes
-8. We read the next 1 byte(s), which is `0x32`. Thus, we get our value "2"
-9. In this case, the free bytes is 0, so we don't skip anything
-10. `05` is the length of the next string, in this case a key. 
-11. We read the next 5 bytes `59 4e 4e 58 4b`, to get the key "YNNXK"
+1. "문자열 인코딩 (String Encoding)"을 이용한 디코딩으로 시작된다. `18`은 문자열의 길이라는 것을 알 수 있다. 따라서, 우리는 그 다음 24바이트를 읽을 것이고, 즉(i.e.) `ff`까지이다.
+2. 이제, 우리는 "Zipmap Encoding"을 이용해서 `02 06... `으로 시작하는 문자열을 분석할 것이다.
+3. `02`는 해시맵내의 엔트리 수이다.
+4. `06`은 다음 문자열의 길이이다. 254보다 작기 때문에, 추가적인 바이트를 읽지 않아도 된다.
+5. 다음 6바이트, 즉`4d 4b 44 31 47 36` 를 읽고, 키(key) "MKD1G6"을 얻는다.
+6. `01`은 다음 문자열인 값(value)의 길이이다.
+7. `00`은 여유(free) 바이트의 길이이다.
+8. 다음 1바이트, `0x32`를 읽는다. 그래서 값 "2"를 얻는다.
+9. 이 경우, 여유 바이트는 0이고, 그래서 우리는 어떤것도 생략하지 않는다.
+10. `05`는 다음 문자열의 길이이고, 이 경우에는 키(key)이다.
+11. 다음 5바이트 `59 4e 4e 58 4b`를 읽고, 키(key) "YNNXK"를 언든다.
 12. `04` is the length of the next string, which is a value
-13. `00` is the number of free bytes after the value
-14. We read the next 4 bytes i.e. `46 37 54 49` to get the value "F7TI"
-15. Finally, we encounter `FF`, which indicates the end of this zip map
-16. Thus, this zip map represents the hash `{"MKD1G6" => "2", "YNNXK" => "F7TI"}`
+12. `04`는 다음 문자열인 값(value)의 길이이다.
+13. `00`은 값(value) 이후의 여유(free) 바이트의 수이다.
+14. 그 다음 4바이트, 즉 `46 37 54 49`를 읽고, 값 "F7TI"를 얻는다.
+15. 마지막으로, `FF`를 만나게 되고, 이것은 zipmap의 끝을 의미한다.
+16. 그러므로, 이 zipmap은 해시 `{"MKD1G6" => "2", "YNNXK" => "F7TI"}`를 표현한다.
 
 ## Ziplist Encoding
 
