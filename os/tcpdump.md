@@ -12,7 +12,10 @@
 ```
 tcpdump -i eth0 dst port 7001 -ttttnnSvA
 ```
-
+- 레디스에서 MOVED 에러가 반환되는지 여부를 확인
+```
+tcpdump -i bond0 portrange __PORT_RANGE__ -ttttnnSvA | grep -i moved -B 5
+```
 
 ## 참고
 * https://linoxide.com/linux-how-to/14-tcpdump-commands-capture-network-traffic-linux/#13_Capture_both_incoming_and_outgoing_packets_of_a_specific_host

@@ -1521,7 +1521,7 @@ class RedisTrib
         }
 
         # Finally shutdown the node
-        xputs ">>> SHUTDOWN the node."
+                                
         node.r.shutdown
     end
 
