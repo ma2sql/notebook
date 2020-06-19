@@ -134,27 +134,22 @@ An argument against Redis point of view is that bugs happen, however it should b
 
 ## Optimistic locking using check-and-set
 
-`WATCH` is used to provide a check-and-set (CAS) behavior to Redis transactions.
 `WATCH`는 트랜잭션에 check-and-set(CAS) 동작을 제공하기 위해 사용된다. 
 
-`WATCH`ed keys are monitored in order to detect changes against them. If at least one watched key is modified before the `EXEC` command, the whole transaction aborts, and `EXEC` returns a @nil-reply to notify that the transaction failed.
-`WATCH`로 감시되는 키들은 변경 사항을 발견하기 위해서 모니터링된다. 만약 감시되는 키중 적어도 하나가 `EXEC`가 실행되기전에 변경이 된다면, 전체 트랜잭션은 취소되고, 그리고 `EXEC`는 트랜잭션이 실패했음을 알리기 위해서 @nil-reply를 반환한다.
+`WATCH`로 감시되는 키들은 변경 사항을 발견하기 위해서 모니터링된다. 만약 `EXEC`가 실행되기전에 감시되는 키 중에서 적어도 하나에서 변경이 된다면, 전체 트랜잭션은 취소되고, `EXEC`는 트랜잭션이 실패했음을 알리기 위해서 @nil-reply를 반환한다.
 
-For example, imagine we have the need to atomically increment the value of a key by 1 (let's suppose Redis doesn't have `INCR`).
-예를 들어, 우리가 원자적으로 키의 값이 1씩 증가시키는 것이 필요하다고 생각해보자 (레디스는 `INCR`를 가지고 있지 않다고 가정할 때,)
+예를 들어, 우리가 원자적으로 키의 값을 1씩 증가시킬 필요가 있다고 생각해보자 (레디스가 `INCR` 커맨드를 가지고 있지 않다고 가정하자).
 
-The first try may be the following:
-첫 번째 시도는 아래와 같다:
+첫 번째 시도는 아래와 같을 것이다:
 
     val = GET mykey
     val = val + 1
     SET mykey $val
 
-This will work reliably only if we have a single client performing the operation in a given time. If multiple clients try to increment the key at about the same time there will be a race condition. For instance, client A and B will read the old value, for instance, 10. The value will be incremented to 11 by both the clients, and finally `SET` as the value of the key. So the final value will be 11 instead of 12.
-이것은 만약 우리가 단일 클라이언트를 가지고 주어진 시간 내에 오퍼레이션을 수행하려고 한다면, 신뢰할 수 있게 동작한다. 만약 여러 클라이언트가 키의 값을 동시에 증가시키려고 한다면, 경쟁 조건이 될 것이다. 예를 들어, 클라이언트 A와 B는 오래된 값을 읽을 것이고, 예를 들어 10을 읽는다고 할 때. 그 값은 양 쪽 클라이언트에 의해 11로 증가될 것이다. 그리고 마지막으로 그 키의 값으로 값을 `SET`으로 저장될 것이다. 그래서 마지막 값은 12가 아닌 11이 될 것이다.
+만약 주어진 시간 내에 오퍼레이션을 수행하는 단 하나의 클라이언트만 가지고 있다면, 이것은 신뢰할 수 있게 동작할 것이다. 만약 여러 클라이언트가 키의 값을 동시에 증가시키려고 한다면, 경쟁 조건이 있을 것이다. 예를 들어, 클라이언트 A와 B는 오래된 값 10을 읽을 것이다. 두 클라이언트는 그 값을 11로 증가시킬 것이고, 최종적으로는 그 키의 값으로 `SET` 명령을 수행햐려고 할 것이다. 그래서 최종적인 값은 12가 아닌 11이 될 것이다.
 
 Thanks to `WATCH` we are able to model the problem very well:
-`WATCH`는 도움이 된다. 우리는 이러한 모델의 문제를 잘 해결해낼 수 있다.
+`WATCH` 덕분에 이러한 문제를 매우 잘 모델링할 수 있다:
 
     WATCH mykey
     val = GET mykey
@@ -163,11 +158,9 @@ Thanks to `WATCH` we are able to model the problem very well:
     SET mykey $val
     EXEC
 
-Using the above code, if there are race conditions and another client modifies the result of `val` in the time between our call to `WATCH` and our call to `EXEC`, the transaction will fail.
-위의 코드를 사용해서, 경쟁 조건이 있고, 다른 클라이언트가 `val`의 결과를 변경한다면. `WATCH`를 호출한 시점부터 `EXEC`를 호출하기의 사이의 시간동안, 트랜잭션은 아마 실패할 것이다.
+위의 코드를 사용해서, 만약 경쟁 조건이 있고, `WATCH`이 호출되어 `EXEC`가 호출되기까지의 시간에 또 다른 클라이언트가 `val`의 결과를 변경한다면, 트랜잭션 실패할 것이다.
 
-We just have to repeat the operation hoping this time we'll not get a new race. This form of locking is called _optimistic locking_ and is a very powerful form of locking. In many use cases, multiple clients will be accessing different keys, so collisions are unlikely – usually there's no need to repeat the operation.
-우리는 단지 이 폼은 잠금은 _낙관적 잠금(optimistic locking)_이고 그리고 매우 강력한 잠금이다. 대부분의 경우, 다수의 클라이언트는 다른 키들에 접근할 것이고, 그래서 충돌할 가능성은 낮으며, 보통은 이러한 동작을 반복시킬 필요가 없을 것이다.
+우리는 단지 이번에는 새로운 경쟁 조건이 없기를 바라면서 이 작업을 반복해야한다. 이러한 잠금의 형태를 _낙관적 잠금(optimistic locking)_이라고 부르고, 이것은 매우 강력한 잠금의 형식이다. 많은 사용 예에서, 다수의 클라이언트는 서로 다른 키들에 접근할 것이고, 그래서 충돌의 가능성은 낮을 것이다. 보통의 경우에는 이러한 오퍼레이션을 반복할 필요는 없을 것이다.
 
 
 ## `WATCH` explained
