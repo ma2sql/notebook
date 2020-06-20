@@ -44,16 +44,12 @@ from the point of view of the Redis protocol). A queued command is simply schedu
 
 ## Errors inside a transaction
 
-During a transaction it is possible to encounter two kind of command errors:
 트랜잭션이 실행되는 동안, 2가지 종류의 커맨드 에러가 발생할 수 있다:
 
-* A command may fail to be queued, so there may be an error before `EXEC` is called. For instance the command may be syntactically wrong (wrong number of arguments, wrong command name, ...), or there may be some critical condition like an out of memory condition (if the server is configured to have a memory limit using the `maxmemory` directive).
-* 큐가 되는 것에 실패하는 커맨드, 그래서 `EXEC`가 호출되기 전에 에러갈 발생할 수 있다. 예를 들어, 커맨드가 문법적으로 잘못되거나 (인자의 수가 잘못되었거나, 커맨드명이 틀린 경우, 등등) 또는 메모리 부족(out of memory)와 같이 크리티컬한 조건이다. (만약 서버가 `maxmemory` 지시자를 이용한 메모리 제한을 가지고 있다면)
-* A command may fail *after* `EXEC` is called, for instance since we performed an operation against a key with the wrong value (like calling a list operation against a string value).
-* `EXEC`가 호출된 이후에 실패하는 커맨드, 예를 들어 어느 한 키에 대해서 잘못된 값으로 오퍼레이션을 수행하는 경우 (문자열 값에 대해서 리스트 오퍼레이션을 호출하는 것과 같은..)
+* 커맨드가 큐에 들어가는 것에 실패할 수 있어서, `EXEC`가 호출되기 전에 에러가 발생할 수 있다. 예를 들어, 커맨드가 문법적으로 잘못되거나 (인자의 수가 잘못되었거나, 커맨드명이 잘못된 경우, 등등), 또는 메모리 부족(out of memory, 서버가 `maxmemory` 지시자를 이용한 메모리 제한 등을 가지고 있다면)와 같은 심각한 조건 등이다.
+* 커맨드가 `EXEC`가 호출 후에 실패할 수 있는데, 예를 들어 어느 한 키에 대해서 잘못된 값으로 오퍼레이션을 수행하는 경우(문자열 값에 대해서 리스트 오퍼레이션을 호출하는 것과 같은..)이다.
 
-Clients used to sense the first kind of errors, happening before the `EXEC` call, by checking the return value of the queued command: if the command replies with QUEUED it was queued correctly, otherwise Redis returns an error. If there is an error while queueing a command, most clients will abort the transaction discarding it.
-클라이언트는 첫 번째 종류의 에러에 대해서는 이해할 것이다. `EXEC`가 실행되기 전에 발생하니까, 큐된 커맨드의 반환 값을 체크함으로써: 만약 커맨드가 QUEUED로 응답했다면, 올바르게 큐잉된 것이고, 그렇지 않으면 레디스는 에러를 반환할 것이다. 만약 큐잉동안에 에러가 있었다면, 대부분의 클라이언트는 폐기된 트랜잭션을 중단할 것이다.
+클라이언트는 큐에 들어간 커맨드의 반환값을 체크함으로써 `EXEC`가 실행되기 전에 발생하는 첫 번째 종류의 에러에 대해서는 감지할 수 있을 것이다: 만약 커맨드가 `QUEUED`와 함께 응답했다면, 올바르게 큐에 추가된 것이고, 그렇지 않으면 레디스는 에러를 반환할 것이다. 만약 큐에 들어가는 동안 에러가 있었다면, 대부분의 클라이언트는 트랜잭션을 폐기하고 중단할 것이다.
 
 However starting with Redis 2.6.5, the server will remember that there was an error during the accumulation of commands, and will refuse to execute the transaction returning also an error during `EXEC`, and discarding the transaction automatically.
 그러나 레디스 2.6.5버전부터, 서버는 커맨드를 누적시키는 동안 에러가 있었다는 것을 기억하고, 그리고 `EXEC`에 대해서 에러를 반환한 트랜잭션의 실행을 거절할 것이고, 자동으로 트랜잭션은 폐기될 것이다.
@@ -100,14 +96,12 @@ This time due to the syntax error the bad `INCR` command is not queued at all.
 
 ## Why Redis does not support roll backs?
 
-If you have a relational databases background, the fact that Redis commands can fail during a transaction, but still Redis will execute the rest of the transaction instead of rolling back, may look odd to you.
-만약 당신이 관계형 데이터베이스에 대한 배경 지식을 가지고 있다면, 레디스 커맨드가 트랜잭션동안에 실패할 수 있다는 사실, 하지만 여전히 레디스는 롤백을 하기보다 남은 트랜잭션을 실행할 것이라는 것이 이상하게 보일지 모른다.
+만약 당신이 관계형 데이터베이스에 대한 배경 지식을 가지고 있다면, 레디스 커맨드가 트랜잭션동안에 실패할 수 있지만, 여전히 레디스는 롤백을 하기보다 남은 트랜잭션을 실행한다는 사실이 이상하게 보일지도 모른다.
 
-However there are good opinions for this behavior:
 그러나 이러한 동작에 대한 좋은 의견이 있다:
 
 * Redis commands can fail only if called with a wrong syntax (and the problem is not detectable during the command queueing), or against keys holding the wrong data type: this means that in practical terms a failing command is the result of a programming errors, and a kind of error that is very likely to be detected during development, and not in production.
-* 레디스 커맨드는 오직 잘못된 문법에 대해서만 실패(그리고 문제는 커맨드를 큐잉하는 동안에는 발견할 수 없다.) 또는 키에 대해서 잘못된 데이터 타입으로 호출되는 것: 이것은 실패하는 커맨드의 실질적인 조건은 프로그래밍 에러의 결과라는 것을 의미한다. 그리고 이러한 것은 개발하는 동안에 발견되기 쉬운 종류의 에러이고, 프로덕션에서는 아닐 것이다.
+* 레디스 커맨드는 잘못된 문법으로 호출되거나(그리고 문제는 커맨드를 큐잉하는 동안에는 발견할 수 없다.), 또는 키에 대해서 잘못된 데이터 타입으로 호출되는 것: 이것은 실패하는 커맨드의 실질적인 조건은 프로그래밍 에러의 결과라는 것을 의미한다. 그리고 이러한 것은 개발하는 동안에 발견되기 쉬운 종류의 에러이고, 프로덕션에서는 아닐 것이다.
 * Redis is internally simplified and faster because it does not need the ability to roll back.
 * 레디스는 내부적으로 단순화되어 있고, 더욱 빠른데, 왜냐하면 롤백에 대한 기능이 필요하지 않기 때문이다.
 
@@ -116,8 +110,7 @@ An argument against Redis point of view is that bugs happen, however it should b
 
 ## Discarding the command queue
 
-`DISCARD` can be used in order to abort a transaction. In this case, no commands are executed and the state of the connection is restored to normal.
-`DISCARD`는 트랜잭션을 취소시키기 위해서 사용될 수 있다 . 이러한 경우, 실행되는 커맨드는 없고, 커넥션의 상태는 일반 상태로 복구된다.
+`DISCARD`는 트랜잭션을 취소시키기 위해서 사용될 수 있다. 이러한 경우, 실행되는 커맨드는 없고, 커넥션의 상태는 정상으로 복구된다.
 
     > SET foo 1
     OK
@@ -130,7 +123,6 @@ An argument against Redis point of view is that bugs happen, however it should b
     > GET foo
     "1"
 
-<a name="cas"></a>
 
 ## Optimistic locking using check-and-set
 
