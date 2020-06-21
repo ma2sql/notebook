@@ -1,28 +1,19 @@
 Transactions
 ============
 
-`MULTI`, `EXEC`, `DISCARD` and `WATCH` are the foundation of transactions in Redis. They allow the execution of a group of commands in a single step, with two important guarantees:
-Redis에서 `MULTI`, `EXEC`, `DISCARD`, 그리고 `WATCH`는 트랜잭션의 파운데이션이다. 이 명령들은 하나의 단계에서, 여러 커맨드들을 그룹으로 실행하도록 해주고, 다음의 2가지를 보장해준다.
+Redis에서 `MULTI`, `EXEC`, `DISCARD`, 그리고 `WATCH`는 트랜잭션의 기반이다. 이 명령들은 하나의 단계에서 여러 커맨드들을 그룹으로 실행하도록 해주고, 다음의 2가지를 보장한다:
 
-* All the commands in a transaction are serialized and executed sequentially. It can never happen that a request issued by another client is served **in the middle** of the execution of a Redis transaction. This guarantees that the commands are executed as a single isolated operation.
-* 트랜잭션 내의 모든 커맨드들은 순차적으로 직렬화되고, 실행된다. 다른 클라이언트로부터 발행된 리퀘스트는 레디스 트랜잭션이 실행되는 사이에 서빙되는 일은 결코 발생하지 않는다. 이것은 그 커맨드들이 하나의 독립된 오퍼레이션으로서 실행되는 것을 보장한다.
+* 트랜잭션 내의 모든 커맨드들은 순차적으로 직렬화되고, 실행된다. 또 다른 클라이언트로부터 발행된 리퀘스트가 레디스 트랜잭션이 실행되는 중간에 서빙되는 일은 결코 발생하지 않는다. 이것은 그 커맨드들이 하나의 독립된 오퍼레이션으로서 실행되는 것을 보장한다.
+* 커맨드들은 모두 처리되거나, 아니면 하나도 처리되지 않거나 하기 때문에, 레디스 트랜잭션은 또한 원자적(atomic)이다. `EXEC` 커맨드는 트랜잭션 내의 모든 커맨드를 실행시키고, 만약 클라이언트가 `EXEC`를 호출하기 전에 트랜잭션의 실행 문맥(context) 중에서 서버와의 커넥션을 잃어버린다면 수행되는 명령은 아무것도 없으며, 반면 `EXEC`가 호출되었다면, 모든 오퍼레이션은 실행될 것이다. [append-only file](/topics/persistence#append-only-file)가 사용될 때, 레디스는 트랜잭션을 디스크에 쓰기 위해서 하나의 write(2) 시스템 콜을 이용할 수가 있는데, 만약 서버가 크래시되거나 시스템 관리자에 의해 하드한 방법으로 죽었을 때, 오퍼레이션의 일부만 등록이 될 수도 있다. 레디스는 재시작시에 이러한 상태를 발견할 것이고, 에러와 함께 그대로 종료될 것이다. `redis-check-aof` 툴을 사용하면, AOF 파일을 수정하는 것이 가능한데, 이 때 부분적으로 기록된 트랜잭션을 삭제를 할 것이고, 그래서 서버는 다시 시작될 수 있을 것이다.
 
-* Either all of the commands or none are processed, so a Redis transaction is also atomic. The `EXEC` command triggers the execution of all the commands in the transaction, so if a client loses the connection to the server in the context of a transaction before calling the `EXEC` command none of the operations are performed, instead if the `EXEC` command is called, all the operations are performed. When using the [append-only file](/topics/persistence#append-only-file) Redis makes sure to use a single write(2) syscall to write the transaction on disk However if the Redis server crashes or is killed by the system administrator in some hard way it is possible that only a partial number of operations are registered. Redis will detect this condition at restart, and will exit with an error. Using the `redis-check-aof` tool it is possible to fix the append only file that will remove the partial transaction so that the server can start again.
-
-커맨드들은 모두 처리되거나, 아니면 하나도 처리되지 않거나 하기 때문에, 레디스 트랜잭션은 또한 원자적(atomic)이다. `EXEC` 커맨드는 트랜잭션 내의 모든 커맨드를 실행시켜서, 만약 클라이언트가 `EXEC`를 호출하기 전에 서버로의 커넥션을 잃어버렸다면 수행되는 명령은 아무것도 없으며, 반면 `EXEC`가 호출되었다면, 모든 오퍼레이션은 실행될 것이다. [append-only file](/topics/persistence#append-only-file)가 사용될 때, 레디스는 하나의 write(2) 시스템 콜을 이용해서 트랜잭션을 디스크로 쓸 수 있도록 하는데, 만약 서버가 크래시되거나 시스템 관리자에 의해 하드한 방법으로 죽었을 때, 오퍼레이션의 일부에 대해서만 등록되는 것은 발생할 수 있다. 레디스는 재시작시에 이러한 조건을 발견할 것이고, 에러와 함께 그대로 종료될 것이다. `redis-check-aof` 툴을 사용하는 것으로, AOF 파일을 수정하는 것이 가능한데, 이 때 부분 트랜잭션에 대해서는 삭제를 할 것이고, 그래서 서버는 다시 시작될 수 있을 것이다.
-
-Starting with version 2.2, Redis allows for an extra guarantee to the above two, in the form of optimistic locking in a way very similar to a check-and-set (CAS) operation. This is documented [later](#cas) on this page.
-레디스 2.2 버전부터, 레디스는 위의 두 개에 더해 추가적인 것을 보장하는데, 이는 체크와 셋(check-and-set, CAS) 오퍼레이션과 매우 유사한 방식으로 낙관적 잠금의 형식이다. 이것은 이 페이지의 뒷 부분에 기술되었다.
+레디스 2.2 버전부터, 레디스는 위의 두 가지와 별개로 추가적인 것을 보장하는데, 이는 체크와 셋(check-and-set, CAS) 오퍼레이션과 매우 유사한 방식의 낙관적 잠금의 형식이다. 이에 관해서는 [later](#optimistic-locking-using-check-and-set)에 기술되었다.
 
 ## Usage
 
-A Redis transaction is entered using the `MULTI` command. The command always replies with `OK`. At this point the user can issue multiple commands. Instead of executing these commands, Redis will queue them. All the commands are executed once `EXEC` is called.
-레디스 트랜잭션은 `MULTI` 커맨드를 사용해서 시작한다. 이 커맨드는 항상 `OK`를 반환한다. 유저 관점에서는 여러 커맨드를 발행할 수 있게 된다. 그러한 커맨드를 실행하지 않고, 레디스는 큐에 적재한다. 이 커맨드 모두는 `EXEC`가 호출될 때, 실행이 된다.
+레디스 트랜잭션은 `MULTI` 커맨드를 사용해서 시작한다. 이 커맨드는 항상 `OK`를 반환한다. 이 시점에서 유저는 여러 커맨드를 발행할 수 있게 된다. 레디스는 이 커맨드들을 실행하지는 않고, 큐에 적재한다. 이 커맨드 모두는 `EXEC`가 호출될 때 실행된다.
 
-Calling `DISCARD` instead will flush the transaction queue and will exit the transaction.
 대신 `DISCARD`를 호출하게 되면, 트랜잭션 큐는 비워지고, 트랜잭션은 종료될 것이다.
 
-The following example increments keys `foo` and `bar` atomically.
 다음의 예는 key `foo`와 `bar`를 원자적으로 증가시키는 예제이다.
 
     > MULTI
@@ -35,12 +26,9 @@ The following example increments keys `foo` and `bar` atomically.
     1) (integer) 1
     2) (integer) 1
 
-As it is possible to see from the session above, `EXEC` returns an array of replies, where every element is the reply of a single command in the transaction, in the same order the commands were issued.
-위의 세션으로부터 알 수 있는대로, `EXEC`는 응답(결과)의 배열을 반환하고, 모든 엘리먼트는 트랜잭션 내의 단일 커맨드의 응답이며, 발행된 커맨드의 순서와 동일하다.
+위의 세션으로부터 알 수 있는 것과 같이, `EXEC`는 응답(결과)의 배열을 반환하고, 각각의 엘리먼트들은 트랜잭션 내의 단일 커맨드의 응답이며, 발행된 커맨드의 순서와 동일하다.
 
-When a Redis connection is in the context of a `MULTI` request, all commands will reply with the string `QUEUED` (sent as a Status Reply
-from the point of view of the Redis protocol). A queued command is simply scheduled for execution when `EXEC` is called.
-레디스 커넥션이 `MULTI` 요청의 문맥일 때, 모든 커맨드는 `QUEUED`라는 문자열과 함께 반환된다 (레디스 프로토콜의 관점에서는 Status Reply처럼 보내어진다.). 큐잉된 커맨드는 단순히 `EXEC`가 호출될 때, 실행되도록 스케쥴링된다.
+레디스 커넥션이 `MULTI` 요청의 문맥일 때, 모든 커맨드는 `QUEUED`라는 문자열과 함께 반환된다 (레디스 프로토콜의 관점에서는 상태 응답(Status Reply)으로 보내어진다.). 큐에 들어간 커맨드는 단순히 `EXEC`가 호출될 때에 실행되도록 스케쥴링된다.
 
 ## Errors inside a transaction
 
