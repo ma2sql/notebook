@@ -51,17 +51,13 @@ from the point of view of the Redis protocol). A queued command is simply schedu
 
 클라이언트는 큐에 들어간 커맨드의 반환값을 체크함으로써 `EXEC`가 실행되기 전에 발생하는 첫 번째 종류의 에러에 대해서는 감지할 수 있을 것이다: 만약 커맨드가 `QUEUED`와 함께 응답했다면, 올바르게 큐에 추가된 것이고, 그렇지 않으면 레디스는 에러를 반환할 것이다. 만약 큐에 들어가는 동안 에러가 있었다면, 대부분의 클라이언트는 트랜잭션을 폐기하고 중단할 것이다.
 
-However starting with Redis 2.6.5, the server will remember that there was an error during the accumulation of commands, and will refuse to execute the transaction returning also an error during `EXEC`, and discarding the transaction automatically.
-그러나 레디스 2.6.5버전부터, 서버는 커맨드를 누적시키는 동안 에러가 있었다는 것을 기억하고, 그리고 `EXEC`에 대해서 에러를 반환한 트랜잭션의 실행을 거절할 것이고, 자동으로 트랜잭션은 폐기될 것이다.
+그러나 레디스 2.6.5버전부터, 서버는 커맨드를 누적시키는 동안 에러가 있었다는 것을 기억하고, 그리고 `EXEC`를 실행하는 동안에 에러를 반환하는 트랜잭션에 대한 실행을 거절할 것이고, 자동으로 트랜잭션을 폐기할 것이다.
 
-Before Redis 2.6.5 the behavior was to execute the transaction with just the subset of commands queued successfully in case the client called `EXEC` regardless of previous errors. The new behavior makes it much more simple to mix transactions with pipelining, so that the whole transaction can be sent at once, reading all the replies later at once.
-2.6.5 버전 이전의 동작은 성공적으로 큐잉된 커맨드의 서브셋에 대해서만 실행하는 것이었고, 이러한 경우 클라이언트는 앞선 에러에 관계없이 `EXEC`를 호출할 수 있었다. 새로운 동작은 좀 더 단순하게 파이프라인으로 섞인 트랜잭션을 섞고, 그래서 전체 트랜잭션이 한 번에 보내질 수 있으며, 모든 응답에 대해서 나중에 한 번에 읽어낼 수 있다.
+2.6.5 버전 이전의 동작은 이전 에러와 관계없이 클라이언트가 `EXEC`를 호출한 경우에는 성공적으로 큐에 들어간 커맨드의 서브셋에 대해서만 실행하는 것이었다. 새로운 동작은 트랜잭션을 파이프라인과 혼합하는 것을 훨씬 더 간단하게 만들고, 그래서 전체 트랜잭션이 한 번에 보내질 수 있으며, 이후에 모든 응답을 한 번에 읽어낼 수가 있다.
 
-Errors happening *after* `EXEC` instead are not handled in a special way: all the other commands will be executed even if some command fails during the transaction.
-`EXEC`이후에 발생하는 에러들은 특별한 방식으로 다루어지지 않는다. 모든 다른 커맨드는 실행이 될 것이고 만약 일부 커맨드가 트랜잭션 동안 실패를 하더라도..
+대신 `EXEC`이후에 발생하는 에러들은 특별한 방식으로 다루어지지 않는다: 만약 일부 커맨드가 트랜잭션 동안 실패를 하더라도, 다른 모든 커맨드는 실행이 될 것이다.
 
-This is more clear on the protocol level. In the following example one command will fail when executed even if the syntax is right:
-이것은 프로토콜 레벨에서 좀 더 명확하다. 다음 예제에서 한 커맨드는 문법이 맞다고 하더라도 트랜잭션이 실행될 때 실패할 것이다.
+이것은 프로토콜 레벨에서 좀 더 명확하다. 다음 예제에서 한 커맨드는 문법이 맞다고 하더라도 트랜잭션이 실행될 때 실패할 것이다:
                                                                                   
     Trying 127.0.0.1...
     Connected to localhost.
@@ -77,22 +73,18 @@ This is more clear on the protocol level. In the following example one command w
     +OK
     -ERR Operation against a key holding the wrong kind of value
 
-`EXEC` returned two-element @bulk-string-reply where one is an `OK` code and the other an `-ERR` reply. It's up to the client library to find a sensible way to provide the error to the user.
-`EXEC`는 2개의 엘리먼트(two-element)를 @bulk-string-reply를 반환했고, 그 중 하나는 `OK` 코드이고, 다른 하나는 `-ERR`이다. 클라이언트 라이브러리는에러를 유저에게 제공하기 위한 합리적인 방법을 찾는 것은 클라이언트 라이브러리에 달려있다.
+`EXEC`는 2개의 엘리먼트(two-element)를 @bulk-string-reply를 반환했고, 그 중 하나는 `OK` 코드이고, 다른 하나는 `-ERR`이다. 에러를 유저에게 제공하기 위한 합리적인 방법을 찾는 것은 클라이언트 라이브러리에 달려있다.
 
-It's important to note that **even when a command fails, all the other commands in the queue are processed** – Redis will _not_ stop the processing of commands.
-아는 것은 중요하다. **심지어 커맨드가 실패를 할 때, 큐 안의 모든 다른 커맨드는 처리될 것이다**. 레디스는 커맨드의 처리를 _멈추지 않을 것이다_.
+"**어느 한 커맨드가 실패를 하더라도, 큐 안의 다른 모든 커맨드는 처리될 것이다**"라는 것에 유의해야 한다. 레디스는 커맨드의 처리를 _멈추지 않을 것이다_.
 
-Another example, again using the wire protocol with `telnet`, shows how syntax errors are reported ASAP instead:
-또 다른 예제, 다시 와이어 프로토콜을 사용해서, `telnet`으로, 어떻게 문법 에러를 ASAP으로 대신 보고하는지를 보여준다.
+다시 `telnet`과 함께 와이어 프로토콜을 사용하는 또 다른 예제에서는 어떻게 문법 에러를 ASAP으로 보고하는지를 보여준다:
 
     MULTI
     +OK
     INCR a b c
     -ERR wrong number of arguments for 'incr' command
 
-This time due to the syntax error the bad `INCR` command is not queued at all.
-이 시간 문법 에러 때문에 `INCR` 커맨드는 전혀 큐잉되지 않는다.
+이번에는 문법 에러 때문에 `INCR` 커맨드는 전혀 큐에 들어가지 않는다.
 
 ## Why Redis does not support roll backs?
 
@@ -100,13 +92,11 @@ This time due to the syntax error the bad `INCR` command is not queued at all.
 
 그러나 이러한 동작에 대한 좋은 의견이 있다:
 
-* Redis commands can fail only if called with a wrong syntax (and the problem is not detectable during the command queueing), or against keys holding the wrong data type: this means that in practical terms a failing command is the result of a programming errors, and a kind of error that is very likely to be detected during development, and not in production.
-* 레디스 커맨드는 잘못된 문법으로 호출되거나(그리고 문제는 커맨드를 큐잉하는 동안에는 발견할 수 없다.), 또는 키에 대해서 잘못된 데이터 타입으로 호출되는 것: 이것은 실패하는 커맨드의 실질적인 조건은 프로그래밍 에러의 결과라는 것을 의미한다. 그리고 이러한 것은 개발하는 동안에 발견되기 쉬운 종류의 에러이고, 프로덕션에서는 아닐 것이다.
-* Redis is internally simplified and faster because it does not need the ability to roll back.
-* 레디스는 내부적으로 단순화되어 있고, 더욱 빠른데, 왜냐하면 롤백에 대한 기능이 필요하지 않기 때문이다.
+* 레디스 커맨드는 잘못된 문법으로 호출되거나 (문제는 커맨드를 큐에 들어가 있는 동안에는 발견할 수 없다), 또는 키에 대해서 잘못된 데이터 타입으로 호출되면 실패할 수 있다: 이것은 실질적인 조건에서 실패하는 커맨드는 프로그래밍 에러의 결과이고, 이러한 것은 프로덕션이 아닌 개발하는 동안 발견될 가능성이 높은 에러라는 것을 의미한다.
+* 레디스는 내부적으로 단순화되어 있고 더욱 빠른데, 왜냐하면 롤백에 대한 기능이 필요하지 않기 때문이다.
 
-An argument against Redis point of view is that bugs happen, however it should be noted that in general the roll back does not save you from programming errors. For instance if a query increments a key by 2 instead of 1, or increments the wrong key, there is no way for a rollback mechanism to help. Given that no one can save the programmer from his or her errors, and that the kind of errors required for a Redis command to fail are unlikely to enter in production, we selected the simpler and faster approach of not supporting roll backs on errors.
-레디스 관점에 대한 반론은 버그가 발생하지만, 하지만 일반적으로 알아차려야한다. 롤백은 당신을 지켜주지 못할 것이다. 프로그래밍 에러로부터.. 예를 들어, 만약 쿼리가 키를 1대신에 2로 증가시킨다면, 또는 잘못된 키를 증가시킨다면, 도움이 될만한 롤백 메커니즘은 없다. 그러한 에러로부터 프로그래머를 지켜줄 그 누구도 없고, 그러한 종류의 에러가 실패하는 레디스 커맨드로부터, 프로덕션에서는 아닐 것이고, 우리는 더욱 심플하고 빠른 접근법 에러에 대한 롤백을 지원하지 않는..
+레디스 관점에 대한 반론은 버그가 발생한다는 것이지만, 일반적으로는 롤백이 프로그래밍 에러로부터 당신을 지켜주니 않는다는 것에 유의해야한다. 예를 들어, 만약 쿼리가 키를 1대신에 2씩 증가시키거나, 또는 잘못된 키를 증가시킨다면, 롤백 메커니즘이 도와줄 수 있는 것은 없다. 그러한 에러로부터 그 누구도 프로그래머를 지켜줄 수가 없고, 레디스 명령이 실패하게하는 에러는 프로덕션에 입력될 가능성이 낮을 것이라는 것을 고려할 때, 에러에 대한 롤백을 지원하지 않는 더욱 심플하고 빠른 접근 방식을 선택한 것이다.
+
 
 ## Discarding the command queue
 
