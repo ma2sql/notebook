@@ -15,10 +15,13 @@
     - OBJ_ENCODING_EMBSTR: robj->ptr이 가리키는 문자열의 크기와 robj 크기를 더한 값을 반환
 - sdsAllocSize
   - 키의 길이에 대한 메모리 할당량을 반환
-- sizeof(dictEntry)
+- sizeof(dictEn try)
   - 키/값을 저장하는 dictEntry의 크기를 반환
 
-server.h
+
+## 주요 구조체
+
+### redisDb
 ```c
 typedef struct redisDb {
     dict *dict;                 /* The keyspace for this DB */
@@ -32,38 +35,10 @@ typedef struct redisDb {
     list *defrag_later;         /* List of key names to attempt to defrag one by one, gradually. */
 } redisDb;
 ```
+레디스의 database. 논리적인 데이터 공간. redis.conf의 databases 변수에 의해 공간의 개수를 정할 수 있는데, 기본값은 16이다.
 
-dict.h
+### dict
 ```c
-typedef struct dictEntry {
-    void *key;
-    union {
-        void *val;
-        uint64_t u64;
-        int64_t s64;
-        double d;
-    } v;
-    struct dictEntry *next;
-} dictEntry;
-
-typedef struct dictType {
-    uint64_t (*hashFunction)(const void *key);
-    void *(*keyDup)(void *privdata, const void *key);
-    void *(*valDup)(void *privdata, const void *obj);
-    int (*keyCompare)(void *privdata, const void *key1, const void *key2);
-    void (*keyDestructor)(void *privdata, void *key);
-    void (*valDestructor)(void *privdata, void *obj);
-} dictType;
-
-/* This is our hash table structure. Every dictionary has two of this as we
- * implement incremental rehashing, for the old to the new table. */
-typedef struct dictht {
-    dictEntry **table;
-    unsigned long size;
-    unsigned long sizemask;
-    unsigned long used;
-} dictht;
-
 typedef struct dict {
     dictType *type;
     void *privdata;
@@ -72,8 +47,37 @@ typedef struct dict {
     unsigned long iterators; /* number of iterators currently running */
 } dict;
 ```
+해시테이블을 보유하는 구조체. 기본적으로 키를 관리하기 위해 사용되나, ttl이 지정된 키, blocking key등등 다양한 종류의 키를 관리하는데 사용된다.
 
-server.h
+```c
+/* This is our hash table structure. Every dictionary has two of this as we
+ * implement incremental rehashing, for the old to the new table. */
+typedef struct dictht {
+    dictEntry **table;
+    unsigned long size;
+    unsigned long sizemask;
+    unsigned long used;
+} dictht;
+```
+**dictht**: 해시테이블로 버킷을 관리한다. 각각의 버킷은 dictEntry와 연결된다.
+
+### dictEntry
+```c
+// 24 bytes
+typedef struct dictEntry {
+    void *key;
+    union { 
+        void *val;
+        uint64_t u64;
+        int64_t s64;
+        double d;
+    } v; // 공용체
+    struct dictEntry *next;
+} dictEntry;
+```
+키와 값의 포인터를 저장하며, 버킷에 연결된 dictEntry는 싱글 링크드 리스트로 연결된다.
+
+### robj
 ```c
 typedef struct redisObject {
     unsigned type:4;
@@ -84,47 +88,51 @@ typedef struct redisObject {
     int refcount;
     void *ptr;
 } robj;
-
-#define LRU_BITS 24
+// #define LRU_BITS 24
 ```
+값(value)을 저장하기 위한 구조체. 참고로 클라이언트로부터 전달받아 아직 가공되기 이전의 문자열도 robj로 표현된다.
 
 dictEntry가 가리키는 key와 val은 모두 robj (redisObject) 이다.
 
+### sds
+작성중
+
+
+## 키스페이스(redisDb)내의 오버헤드 계산
+![overhead](/images/redis_keyspace_overhead.jpg)
+
 ```c
-        mem = dictSize(db->dict) * sizeof(dictEntry) +
-              dictSlots(db->dict) * sizeof(dictEntry*) +
-              dictSize(db->dict) * sizeof(robj);
-        mh->db[mh->num_dbs].overhead_ht_main = mem;
-        mem_total+=mem;
+/*  
+ *  #define dictSlots(d) ((d)->ht[0].size+(d)->ht[1].size)
+ *  #define dictSize(d) ((d)->ht[0].used+(d)->ht[1].used)
+ */
+mem = dictSize(db->dict) * sizeof(dictEntry) +
+      dictSlots(db->dict) * sizeof(dictEntry*) +
+      dictSize(db->dict) * sizeof(robj);
+mh->db[mh->num_dbs].overhead_ht_main = mem;
+mem_total+=mem;
 
-        mem = dictSize(db->expires) * sizeof(dictEntry) +
-              dictSlots(db->expires) * sizeof(dictEntry*);
-        mh->db[mh->num_dbs].overhead_ht_expires = mem;
-        mem_total+=mem;
+mem = dictSize(db->expires) * sizeof(dictEntry) +
+      dictSlots(db->expires) * sizeof(dictEntry*);
+mh->db[mh->num_dbs].overhead_ht_expires = mem;
+mem_total+=mem;
 ```
-
 **overhead_ht_main**
 - 다음의 각 항목을 계산 후, 합한 값이 오버헤드의 값이 된다.
-    - [해시테이블의 used (실제 키의 수)] x [dictEntry의 사이즈.. 대략 50바이트]
-    - [해시테이블의 used (실제 키의 수)] x [robj의 사이즈.. 대략 16바이트]
-    - [해시테이블의 size (버킷<또는 슬롯>의 수)] x [dictEntry의 포인터.. 대략 8바이트]
+    - [해시테이블의 used (실제 키의 수)] x [dictEntry의 사이즈.. 24바이트]
+    - [해시테이블의 used (실제 키의 수)] x [robj의 사이즈.. 16바이트]
+    - [해시테이블의 size (버킷<또는 슬롯>의 수)] x [dictEntry의 포인터.. 8바이트]
 
 **overhead_ht_expires**
 - 다음의 각 항목을 계산 후, 합한 값이 오버헤드의 값이 된다.
-    - [해시테이블의 used (실제 키의 수)] x [dictEntry의 사이즈.. 대략 50바이트]
-    - [해시테이블의 size (버킷<또는 슬롯>의 수)] x [dictEntry의 포인터.. 대략 8바이트]
-
-dict.h
-```c
-#define dictSlots(d) ((d)->ht[0].size+(d)->ht[1].size)
-#define dictSize(d) ((d)->ht[0].used+(d)->ht[1].used)
-```
+    - [해시테이블의 used (실제 키의 수)] x [dictEntry의 사이즈.. 24바이트]
+    - [해시테이블의 size (버킷<또는 슬롯>의 수)] x [dictEntry의 포인터.. 16바이트]
 
 **key**는 sds로 저장된다. 값은 **robj**로 저장된다.
 
-- **redisDb**: 레디스의 database. 논리적인 데이터 공간. redis.conf의 databases 변수에 의해 공간의 개수를 정할 수 있고, 기본적으로는 16개의 공간을 가진다.
-- **dict**: 해시테이블을 보유하는 구조체. 기본적으로 키를 관리하기 위해 사용되나, ttl이 지정된 키, blocking key등등 다양한 종류의 키를 관리하는데 사용된다.
+
+
 - **dictht**: 해시테이블로 버킷을 관리한다. 각각의 버킷은 dictEntry와 연결된다.
-- **dictEntry**: 키와 값의 포인터를 저장하며, 버킷에 연결된 dictEntry는 싱글 링크드 리스트로 연결된다.
+- 
 - **sds**: 키는 단일 문자열로 관리된다. 키 이외에도 문자열을 저장하고 표현하는데 사용된다.
 - **robj**: 값(value)을 저장하기 위한 구조체. 참고로 클라이언트로부터 전달받아 아직 가공되기 이전의 문자열도 robj로 표현된다.
