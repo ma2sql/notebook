@@ -6,10 +6,11 @@ tags: [redis, os, shell]
 
 <!-- TOC -->
 
-- [자주 사용하는 스크립트](#자주-사용하는-스크립트)
-    - [Swap 사용량 조사: 1](#swap-사용량-조사-1)
-    - [Swap 사용량 조사: 2](#swap-사용량-조사-2)
-    - [redis 서버의 swap 사용량](#redis-서버의-swap-사용량)
+- [1. 자주 사용하는 스크립트](#1-자주-사용하는-스크립트)
+  - [1.1. Swap 사용량 조사: 1](#11-swap-사용량-조사-1)
+  - [1.2. Swap 사용량 조사: 2](#12-swap-사용량-조사-2)
+  - [1.3. redis 서버의 swap 사용량](#13-redis-서버의-swap-사용량)
+  - [2.1 초단위로 /proc/meminfo 출력하기](#21-초단위로-procmeminfo-출력하기)
 
 <!-- /TOC -->
 
@@ -44,4 +45,16 @@ for REDIS_PID in $(pgrep -f redis-server); do
     VM_SWAP=$(awk '/VmSwap/ { print $2 }' /proc/${REDIS_PID}/status)
     echo ${REDIS_PID} ${REDIS_NAME} ${VM_SWAP}
 done | awk '{print $NF, $0}' | sort -nr | cut -f2- -d' ') | column -t
+```
+
+## 2.1 초단위로 /proc/meminfo 출력하기
+```
+while true; do 
+    NOW=$(date '+%Y-%m-%d %H:%M:%S'); 
+    cat /proc/meminfo \
+        | grep -E '((In)?[aA]ctive\((anon|file)\)|Swap(Cached|Free)|Dirty):' \
+        | xargs echo \
+        | sed "s/^/[$NOW] /";  
+        sleep 1; 
+done;
 ```

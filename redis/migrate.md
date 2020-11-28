@@ -7,9 +7,10 @@ Offline migration
 
 <!-- TOC -->
 
-- [Mission](#mission)
-- [MIGRATE 내부적으로 사용되는 3가지 커맨드](#migrate-내부적으로-사용되는-3가지-커맨드)
-- [RESTORE 커맨드에 대한 테스트](#restore-커맨드에-대한-테스트)
+- [Offline migration](#offline-migration)
+  - [Mission](#mission)
+  - [MIGRATE 내부적으로 사용되는 3가지 커맨드](#migrate-내부적으로-사용되는-3가지-커맨드)
+  - [RESTORE 커맨드에 대한 테스트](#restore-커맨드에-대한-테스트)
 
 <!-- /TOC -->
 
@@ -43,7 +44,7 @@ However for sorted set values the complexity is O(N*M*log(N)) because inserting 
 실제로 `RESTORE` 커맨드로 빅 키 (big key)를 복원할 때 블로킹이 발생할 수 있을까? 간단히 테스트해 본 결과, 블로킹이 발생하고 응답 시간이 지연되는 것을 확인할 수 있었다.
 
 ```
-memory usage migration_test
+# memory usage migration_test
 269303876
  
 r.set('migration_test', 'a'*(2**28))

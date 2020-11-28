@@ -25,4 +25,3 @@ MySQL 5.7 부터는 `innodb_log_write_ahead_size`라는 변수가 추가되어, 
 - http://mysqlserverteam.com/mysql-5-7-improves-dml-oriented-workloads/
 - https://dev.mysql.com/doc/refman/5.7/en/innodb-parameters.html#sysvar_innodb_log_write_ahead_size
 - http://yoshinorimatsunobu.blogspot.com/2014/03/why-buffered-writes-are-sometimes.html
-- 
