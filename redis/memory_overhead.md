@@ -134,7 +134,7 @@ mem_total+=mem;
 **overhead_ht_expires**
 - 다음의 각 항목을 계산 후, 합한 값이 오버헤드의 값이 된다.
     - [해시테이블의 used (ttl 설정된 키의 수)] x [dictEntry의 사이즈, 24바이트]
-    - [해시테이블의 size (버킷<또는 슬롯>의 수)] x [dictEntry의 포인터, 16바이트]
+    - [해시테이블의 size (버킷<또는 슬롯>의 수)] x [dictEntry의 포인터, 8바이트]
 
 `overhead_ht_main`와 `overhead_ht_expires`의 계산에는 2가지 차이가 있다. 먼저 value를 관리하는 `robj`에 대한 계산인데, expires는 결국 만료된 키를 삭제하기 위해 관리되는 것으로, 굳이 값을 따로 관리할 필요는 그리고 두번째로 키와 슬롯(버킷)의 수가 다른데, expires에는 만료 시간(ttl) 이 설정되지 않는 키는 관리되지 않기 때문이다.
 

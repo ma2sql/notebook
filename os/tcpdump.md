@@ -8,9 +8,9 @@
 * `-S`: 절대값 시퀀스 번호를 출력한다. (상대값이 아닌)
 
 ## Usage
-- eth0, 7001포트로 들어오는 패킷을 ASCII 형태로 출력
+- eth0, 6379포트로 들어오는 패킷을 ASCII 형태로 출력
 ```
-tcpdump -i eth0 dst port 7001 -ttttnnSvA
+tcpdump -i eth0 dst port 6379 -ttttnnSvA
 ```
 - 레디스에서 MOVED 에러가 반환되는지 여부를 확인
 ```
