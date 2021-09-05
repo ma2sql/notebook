@@ -74,3 +74,5 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
 모듈이 `HELLOWORLD.RAND`와 같이 모듈의 이름 뒤에 점(.)을 붙이고, 마지막에 커맨드 이름을 붙여서 커맨드를 호출하도록 하는 것은 좋은 생각이다. 이렇게 하면 충돌이 발생할 가능성이 줄어들 것이다.
 
 만약 다른 모듈이 충돌하는 커맨드를 가지는 경우에는 `RedisModule_CreateCommand` 함수가 모듈 중 하나에서 실패하고, 모듈의 로딩은 에러를 반환하며 중단될 것이기 때문에, 레디스에서 동시에 동작할 수는 없을 것이다.
+
+## Module initialization
