@@ -195,6 +195,90 @@ if (RedisModule_StringToLongLong(ctx,argv[1],&myval) == REDISMODULE_OK) {
 
 ## Calling Redis commands
 
+레디스에 접근하기 위한 고수준 API는 `RedisModule_Call()` 함수와 `Call()`이 반환하는 응답(reply) 객체에 접근하기 위한 함수들을 합한 것이다.
+`RedisModule_Call`은 인수로서 함수에 전달할 오브젝트의 타입을 지정하는데 사용하는 포멧 지정자와 함께 특별한 호출 컨벤션을 이용한다.
+레디스 커맨드는 커맨드의 이름과 인수의 목록을 이용하는 것만으로 호출된다. 그러나 커맨드를 호출할 때, 인수들은 다른 종류의 문자열들로부터 시작될 수도 있다. 그러한 문자열들로는 널로 종료되는 C문자열, 커맨드 구현 내에서 `argv` 파라미터로부터 받은 `RedisModuleString`, 포인터와 길이를 가지는 바이너리로부터 안전한 C버퍼 등등이 있을 것이다.
+예를 들어, 만약 인수 벡터 `argv`에서 받은 `RedisModuleString` 오브젝트 포인터의 배열인 첫 번째 인수(키의 이름)와 숫자 "10"을 표현하는 C문자열인 두 번째 인수(증분)를 이용해서 `INCRBY`를 호출하고 싶다면, 아래와 같은 함수 호출을 이용하게 될 것이다.
+
+```c
+RedisModuleCallReply *reply;
+reply = RedisModule_Call(ctx,"INCRBY","sc",argv[1],"10");
+```
+
+첫 번째 인수는 컨텍스트이고, 두번째는 항상 커맨드 이름으로 사용되는 null로 끝나는 C 문자열이다. 세번째 인수는 포맷 지정자이고 각각의 문자는 뒤따르는 인수들의 타입에 대응한다. 위의 경우에서 "sc"는 `RedisModuleString`오브젝트, 그리고 null로 끝나는 C문자열을 의미한다. 나머지 다른 인수들은 지정한대로 2개의 인수뿐이다. 실제로 `argv[1]`은 `RedisModuleString`이고, "10"은 null로 끝나는 C문자열이다.
+다음은 포맷 지정자의 전체 목록이다.
+
+* c -- null로 끝나는 C 문자열의 포인터
+* b -- c 버퍼, 두 개의 인수가 필요로하다. C 문자열 포인터와 길이 (size_t)
+* s -- `argv` 또는 `RedisModuleString`를 반환하는 다른 레디스 모듈 APIs에 의해 받은 `RedisModuleString`
+* l -- Long long integer
+* v -- `RedisModuleString` 오브젝트의 배열
+* ! -- 이 조정자는 단지 함수에게 리플리카와 AOF로 커맨드를 복제할 것이라는 것을 지시한다. 인수 분석의 관점에서는 무시된다.
+* A -- 이 조정자는 `!`이 사용될 때, AOF 전파를 억제할 것을 지시한다. 커맨드는 오직 리플리카로만 전파될 것이다.
+* R -- 이 조정자는 `!`이 사용될 때, 리플리카로의 전파를 억제할 것을 지시한다. AOF가 활성화되어 있다면, 커맨드는 AOF로만 전파될 것이다.
+
+이 함수는 성공 시에 `RedisModuleCallReply` 객체를, 실패할 때에는 `NULL`을 반환한다. 
+커맨드 이름이 유효하지 않거나, 포맷 지시자가 인식할 수 없는 문자들을 사용하거나, 또는 인수의 수를 잘못 지정해서 커맨드를 실행할 때, `NULL`이 반환된다. 위의 경우에서 `errno` 변수는 `EINVAL`로 설정된다. 클러스터가 활성화된 인스턴스에서 대상 키가 로컬 해시 슬롯의 것이 아닐 때에도 `NULL`이 반환된다. 이 경우에는 `errno`는 `EPERM`이 설정된다.
+
+### Working with RedisModuleCallReply objects
+
+`RedisModuleCall`는 `RedisModule_CallReply*`계열 함수를 사용해서 접근할 수 있는 reply 오브텍트를 반환한다.
+타입 또는 응답 (레디스 프로토콜이 지원하는 데이터 타입의 하나에 해당하는)을 획득하기 위해서, `RedisModule_CallReplyType()`함수가 사용된다.
+
+```c
+reply = RedisModule_Call(ctx,"INCRBY","sc",argv[1],"10");
+if (RedisModule_CallReplyType(reply) == REDISMODULE_REPLY_INTEGER) {
+    long long myval = RedisModule_CallReplyInteger(reply);
+    /* Do something with myval. */
+}
+```
+
+유효한 응답 타입은 다음과 같다.
+
+* `REDISMODULE_REPLY_STRING` 대량의 문자열이나 상태의 응답 
+* `REDISMODULE_REPLY_ERROR` 에러들
+* `REDISMODULE_REPLY_INTEGER` 부호있는 64비트 정수
+* `REDISMODULE_REPLY_ARRAY` 응답의 배열
+* `REDISMODULE_REPLY_NULL` NULL 응답
+
+Strings, errors and arrays have an associated length. For strings and errors the length corresponds to the length of the string. For arrays the length is the number of elements. To obtain the reply length the following function is used:
+
+```c
+size_t reply_len = RedisModule_CallReplyLength(reply);
+```
+
+In order to obtain the value of an integer reply, the following function is used, as already shown in the example above:
+
+```c
+long long reply_integer_val = RedisModule_CallReplyInteger(reply);
+```
+
+Called with a reply object of the wrong type, the above function always returns LLONG_MIN.
+Sub elements of array replies are accessed this way:
+
+```c
+RedisModuleCallReply *subreply;
+subreply = RedisModule_CallReplyArrayElement(reply,idx);
+```
+
+The above function returns NULL if you try to access out of range elements.
+Strings and errors (which are like strings but with a different type) can be accessed using in the following way, making sure to never write to the resulting pointer (that is returned as as const pointer so that misusing must be pretty explicit):
+
+```c
+size_t len;
+char *ptr = RedisModule_CallReplyStringPtr(reply,&len);
+```
+
+If the reply type is not a string or an error, NULL is returned.
+RedisCallReply objects are not the same as module string objects (RedisModuleString types). However sometimes you may need to pass replies of type string or integer, to API functions expecting a module string.
+When this is the case, you may want to evaluate if using the low level API could be a simpler way to implement your command, or you can use the following function in order to create a new string object from a call reply of type string, error or integer:
+
+```c
+RedisModuleString *mystr = RedisModule_CreateStringFromCallReply(myreply);
+```
+
+If the reply is not of the right type, NULL is returned. The returned string object should be released with RedisModule_FreeString() as usually, or by enabling automatic memory management (see corresponding section).
+
 ## Releasing call reply objects
 
 ### Returning values from Redis commands
