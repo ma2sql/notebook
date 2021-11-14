@@ -5,12 +5,12 @@ mysql mysql_native_password 만들기 예제입니다.
 # ==== Python ====
 # MySQL Password (Python)
 import hashlib
+# https://blog.pythian.com/hashing-algorithm-in-mysql-password-2/
 def get_mysql_native_password(password):
-    # https://blog.pythian.com/hashing-algorithm-in-mysql-password-2/
-    return '*' + str.upper(
-                     hashlib.sha1(
-                         hashlib.sha1(
-                             password.encode('utf-8')).digest()).hexdigest())
+    return '*' + str.upper(
+                    hashlib.sha1(
+                        hashlib.sha1(
+                            password.encode('utf-8')).digest()).hexdigest())
 
 
 get_mysql_native_password('password')
