@@ -518,7 +518,7 @@ MSET {user:1000}.name Angela {user:1000}.surname White
 * 노드를 `FAIL`로 표시해둔다.
 * (하트 비트 메시지 내에서 `FAIL` 상태가 아닌) `FAIL` 메시지를 접속 가능한 모든 노드에게 전송한다. 
 
-이미 `PFAIL` 상태로 노드가 플래그로 지정되어 있는지 아닌지와 관계없이, `FAIL`메시지는 수신하는 모든 노드가 해당 노드를 `FAIL` 상태로 표시해두도록 한다. 
+이미 `PFAIL` 상태로 노드가 플래그로 지정되어 있는지 아닌지와 관계없이, `FAIL` 메시지는 수신하는 모든 노드가 해당 노드를 `FAIL` 상태로 표시해두도록 한다. 
 
 *`FAIL`플래그는 대부분 단방향이다*. 이것은 어떤 노드가 `PFAIL`에서 `FAIL`로는 바뀔 수 있지만, `FAIL` 플래그는 오직 다음과 같은 상황에서만 해제된다.
 
@@ -542,125 +542,173 @@ MSET {user:1000}.name Angela {user:1000}.surname White
 
 ## Configuration handling, propagation, and failovers
 
-Cluster current epoch
----
+### Cluster current epoch [DONE]
 
 Redis Cluster uses a concept similar to the Raft algorithm "term". In Redis Cluster the term is called epoch instead, and it is used in order to give incremental versioning to events. When multiple nodes provide conflicting information, it becomes possible for another node to understand which state is the most up to date.
+레디스 클러스터는 Raft 알고리즘의 ****term**과 유사한 개념을 사용한다. 레디스 클러스터에서 이 용어는 대신 `epoch`라고 하며, 이벤트에 대한 증분 버전을 부여하기 위해서 사용된다. 여러 노드에서 충돌하는 정보를 제공하면, 또 다른 노드는 어떤 상태가 가장 최신인지를 알 수 있게 된다.
 
 The `currentEpoch` is a 64 bit unsigned number.
+`currentEpoch`는 64비트의 부호없는 수이다.
 
 At node creation every Redis Cluster node, both replicas and master nodes, set the `currentEpoch` to 0.
+노드 생성 시, 모든 레디스 클러스터 노드는 마스터와 리플리카 모두 `currentEpoch`를 0으로 설정한다.
 
 Every time a packet is received from another node, if the epoch of the sender (part of the cluster bus messages header) is greater than the local node epoch, the `currentEpoch` is updated to the sender epoch.
+다른 노드에게서 패킷을 받을 때마다, 만약 전송하는 노드(클러스터 메시지 헤더의 일부분의)의 epoch가 로컬 노드의 epoch보다 크다면, `currentEpoch`는 전송하는 노드의 epoch로 업데이트된다.
 
 Because of these semantics, eventually all the nodes will agree to the greatest `currentEpoch` in the cluster.
+이러한 의미론(semantics)으로 인해, 결국 모든 노드는 클러스터 내에서 가장 큰 `currentEpoch`에 대해서 합의할 것이다.
 
 This information is used when the state of the cluster is changed and a node seeks agreement in order to perform some action.
+이 정보는 클러스터의 상태가 변경되고, 노드가 어떤 액션을 취하기 위해서 동의를 구할 때 사용이 된다.
 
 Currently this happens only during replica promotion, as described in the next section. Basically the epoch is a logical clock for the cluster and dictates that given information wins over one with a smaller epoch.
+현재 이것은 다음 섹션에서 설명된대로 리플리카의 승격동안에만 발생하고 있다. 기본적으로 epoch는 클러스터에 대한 논리적인 시계(clock)이고, 주어진 정보는 더 작은 epoch를 가진 것을 이기게 한다.
 
-Configuration epoch
----
+### Configuration epoch [DONE]
 
 Every master always advertises its `configEpoch` in ping and pong packets along with a bitmap advertising the set of slots it serves.
+모든 마스터는 항상 자신이 담당하는 슬롯의 셋에 대한 비트맵과 함께 `configEpoch`를 핑/퐁 패킷으로 전파한다.
 
 The `configEpoch` is set to zero in masters when a new node is created.
+노드가 생성될 때, 마스터 노드 내에서 `configEpoch`는 0으로 설정된다.
 
-A new `configEpoch` is created during replica election. replicas trying to replace
-failing masters increment their epoch and try to get authorization from
-a majority of masters. When a replica is authorized, a new unique `configEpoch`
-is created and the replica turns into a master using the new `configEpoch`.
+A new `configEpoch` is created during replica election. replicas trying to replace failing masters increment their epoch and try to get authorization from a majority of masters. When a replica is authorized, a new unique `configEpoch` is created and the replica turns into a master using the new `configEpoch`.
+새로운 `configEpoch`는 리플리카의 승격중에 생성된다. 장애난 마스터를 대체하려는 리플리카는 epoch를 증가시키고, 과반 수의 마스터로부터 권한을 받으려고 시도한다. 승인이 된다면, 새로운 유니크한 `configEpoch`가 만들어지고, 리플리카는 이 새로운 `configEpoch`를 이용해서 마스터로 전환된다.
 
 As explained in the next sections the `configEpoch` helps to resolve conflicts when different nodes claim divergent configurations (a condition that may happen because of network partitions and node failures).
+다음 섹션에서 설명하는대로, 서로 다른 노드가 일치하지 않는 구성 정보를 주장할 때(네트워크 파티션과 노드 장애 때문에 발생할지도 모르는 상태), `configEpoch`는 이러한 충돌을 해결하는데 도움이 된다.
 
 replica nodes also advertise the `configEpoch` field in ping and pong packets, but in the case of replicas the field represents the `configEpoch` of its master as of the last time they exchanged packets. This allows other instances to detect when a replica has an old configuration that needs to be updated (master nodes will not grant votes to replicas with an old configuration).
+리플리카 노드는 또한 `configEpoch` 핑/퐁 패킷으로 전파하는데, 리플리카의 경우 이 필드는 자신의 마스터와 가장 마지막으로 패킷을 교환한 시간의 `configEpoch`를 나타낸다. 이것은 리플리카가 업데이트가 필요한 오래된 구성 정보를 가지고 있을 때, 다른 인스턴스가 이를 발견할 수 있게 한다 (마스터 노드는 오래된 구성 정보를 가진 리플리카에게 투표하지 않을 것이다). 
 
 Every time the `configEpoch` changes for some known node, it is permanently stored in the nodes.conf file by all the nodes that receive this information. The same also happens for the `currentEpoch` value. These two variables are guaranteed to be saved and `fsync-ed` to disk when updated before a node continues its operations.
+어떤 알려진(known) 노드에 대해 `configEpoch`가 바뀔 때마다, 이러한 정보를 받은 모든 노드들은 `nodes.conf` 파일에 이를 영구적으로 저장한다. 또한, `currentEpoch` 값에 대해서도 동일한 일이 발생한다. 이 2가지 변수는 어떤 노드가 작업을 계속하기 전에 업데이트 될 때, 디스크로의 저장과 `fsync-ed`가 보장된다.
 
-The `configEpoch` values generated using a simple algorithm during failovers
-are guaranteed to be new, incremental, and unique.
+The `configEpoch` values generated using a simple algorithm during failovers are guaranteed to be new, incremental, and unique.
+일오버 동안에 단순한 알고리즘을 이용해서 만들어지는 `configEpoch` 값은 새롭고, 증분된 값이고, 유니크한 것이 보장돤다.
 
-Replica election and promotion
----
+### Replica election and promotion [DONE]
 
 replica election and promotion is handled by replica nodes, with the help of master nodes that vote for the replica to promote.
+리플리카 선거와 승격은 리플리카 노드에 의해서 진행되며, 마스터 노드들은 리플리카 노드가 승격하는 것에 대해서 투표함으로써 이를 돕는다.
 A replica election happens when a master is in `FAIL` state from the point of view of at least one of its replicas that has the prerequisites in order to become a master.
+리플리카의 선거는 마스터가 되려고 하는 전제 조건을 가진, 적어도 하나 이상의 리플리카 노드의 관점에서, 자신의 마스터 노드가 `FAIL`상태일 때 발생한다.
 
 In order for a replica to promote itself to master, it needs to start an election and win it. All the replicas for a given master can start an election if the master is in `FAIL` state, however only one replica will win the election and promote itself to master.
+리플리카가 자신을 마스터로 승격시키기 위해서, 선거를 시작하고 승리할 필요가 있다. 주어진 마스터에 대한 모든 리플리카들은 마스터가 `FAIL` 상태이면, 선거를 시작할 수 있지만, 오직 하나의 리플리카가 선거에서 승리하고, 자신을 마스터로 승격시킬 것이다.
 
 A replica starts an election when the following conditions are met:
+다음의 조건이 충족되면, 리플리카는 선거를 시작한다.
 
 * The replica's master is in `FAIL` state.
 * The master was serving a non-zero number of slots.
 * The replica replication link was disconnected from the master for no longer than a given amount of time, in order to ensure the promoted replica's data is reasonably fresh. This time is user configurable.
 
+* 리플리카의 마스터가 `FAIL` 상태이다.
+* 마스터는 하나 이상의 슬롯을 서빙한다.
+* 리플리카 리플리케이션 링크가 마스터로부터 정해진 시간보다 더 오랜 시간동안 끊긴 상태이고, 승격된 리플리카의 데이터가 적당히 최근의 데이터를 유지한다. 이 시간은 유저가 변경할 수 있다.
+
 In order to be elected, the first step for a replica is to increment its `currentEpoch` counter, and request votes from master instances.
+선출되기 위한 리플라카의 첫 단계는 `currentEpoch` 카운터를 증가시키고, 마스터 인스턴스들에 투표를 요청하는 것이다.
 
 Votes are requested by the replica by broadcasting a `FAILOVER_AUTH_REQUEST` packet to every master node of the cluster. Then it waits for a maximum time of two times the `NODE_TIMEOUT` for replies to arrive (but always for at least 2 seconds).
+투표는 리플리카가 클러스터의 모든 마스터 노드에게 `FAILOVER_AUTH_REQUEST` 패킷을 전파함으로써 요청된다. 그리고 나서 최대 `NODE_TIMEOUT`의 2배의 시간동안 응답이 도착하기를 기다린다 (언제나 최소 2초동안).
 
 Once a master has voted for a given replica, replying positively with a `FAILOVER_AUTH_ACK`, it can no longer vote for another replica of the same master for a period of `NODE_TIMEOUT * 2`. In this period it will not be able to reply to other authorization requests for the same master. This is not needed to guarantee safety, but useful for preventing multiple replicas from getting elected (even if with a different `configEpoch`) at around the same time, which is usually not wanted.
+마스터가 어떤 리플리카에 대해서 `FAILOVER_AUTH_ACK`로 긍정적인 응답함으로써 투표하면, 동일한 마스터의 또 다른 리플리카에 대해서는 `NODE_TIMEOUT * 2`의 시간 동안은 더 이상 투표할 수 없다. 이 시간동안에 동일한 마스터에 대한 다른 권한 요청에 대해서는 응답할 수 없다. 이것은 안정성을 보장하기 위해서 필요한 것은 아니지만, 여러 리플리카가 동시에 선출되는 것(심지어 `configEpoch`가 다르더라도)을 방지하는 것에는 유용하며, 보통은 필요하지 않다.
 
 A replica discards any `AUTH_ACK` replies with an epoch that is less than the `currentEpoch` at the time the vote request was sent. This ensures it doesn't count votes intended for a previous election.
+리플리카는 투표 요청이 전송되었을 때, `currentEpoch` 값보다 작은 에포크를 가진 `AUTH_ACK` 응답들은 폐기한다. 이것은 이전 선거를 위해 만들어진 투표는 계산되지 않는다는 것을 보장한다.
 
 Once the replica receives ACKs from the majority of masters, it wins the election.
 Otherwise if the majority is not reached within the period of two times `NODE_TIMEOUT` (but always at least 2 seconds), the election is aborted and a new one will be tried again after `NODE_TIMEOUT * 4` (and always at least 4 seconds).
+리플리카가 과반 수의 마스터로부터 ACK 응답을 받으면, 선거에서 승리하게 된다.
+그렇지 않고 `NODE_TIMEOUT`의 2배(언제나 최소 2초)의 시간내에 과반수로부터 도달하지 않았다면, 이 선거는 취소되고 새로운 선거가 `NODE_TIMEOUT * 4`(그리고 언제나 최소 4초) 이후에 다시 시도될 것이다.
 
-Replica rank
----
+### Replica rank [DONE]
 
 As soon as a master is in `FAIL` state, a replica waits a short period of time before trying to get elected. That delay is computed as follows:
+마스터 노드가 `FAIL`상태가 되자마자, 리플리카는 선거를 시도하기 전에 짧은 시간동안 기다린다. 이러한 지연 시간은 다음과 같이 계산된다.
 
-    DELAY = 500 milliseconds + random delay between 0 and 500 milliseconds +
-            REPLICA_RANK * 1000 milliseconds.
+```
+DELAY = 500 milliseconds + random delay between 0 and 500 milliseconds +
+        REPLICA_RANK * 1000 milliseconds.
+```
 
 The fixed delay ensures that we wait for the `FAIL` state to propagate across the cluster, otherwise the replica may try to get elected while the masters are still unaware of the `FAIL` state, refusing to grant their vote.
+이 고정된 지연 시간은 `FAIL` 상태가 클러스터 전체에 전파될 때까지 기다리게 하는데, 그렇지 않으면 다른 마스터들이 아직 `FAIL`상태를 인식하지 못하고 투표를 거부하는 동안에, 리플리카는 선출되려고 시도할지도 모른다.
 
 The random delay is used to desynchronize replicas so they're unlikely to start an election at the same time.
+랜덤한 지연 시간은 리플리카를 비동기화하기 위해서 사용되고, 그래서 동시에 선거를 시작하지 않을 것이다.
 
 The `REPLICA_RANK` is the rank of this replica regarding the amount of replication data it has processed from the master.
 Replicas exchange messages when the master is failing in order to establish a (best effort) rank:
 the replica with the most updated replication offset is at rank 0, the second most updated at rank 1, and so forth.
 In this way the most updated replicas try to get elected before others.
+`REPLICA_RANK`는 마스터에서 처리한 리플리케이션 데이터의 양과 관련된 이 리플리카의 순위이다. 리플리카는 마스터가 실패하고 있는 상태일 때, (최선의) 순위를 결정하기 위해서 메시지를 교환한다.
+가장 최신의 리플리케이션 오프셋을 가진 리플리카는 0순위이고, 두 번째로 최신인 것은 1순위 등이다. 이러한 방식으로 가장 최신의 리플리카는 다른 리플리카들보다 먼저 선거를 시도할 수 있다.
 
-Rank order is not strictly enforced; if a replica of higher rank fails to be
-elected, the others will try shortly.
+Rank order is not strictly enforced; if a replica of higher rank fails to be elected, the others will try shortly.
+랭킹의 순서는 엄격하게 강제되지 않는다. 만약 더 높은 순위의 리플리카가 선출에 실패했다면, 다른 노드들이 곧바로 시도할 것이다.
 
 Once a replica wins the election, it obtains a new unique and incremental `configEpoch` which is higher than that of any other existing master. It starts advertising itself as master in ping and pong packets, providing the set of served slots with a `configEpoch` that will win over the past ones.
+리플리카가 선거에서 승리하면, 유니크하고, 증분된 새로운 `configEpoch`값을 획득하며, 이 값은 기존의 어떤 다른 마스터의 것보다도 높은 값이다. 그리고 핑/퐁 패킷으로 자신을 마스터로 알리기 시작한다.
 
 In order to speedup the reconfiguration of other nodes, a pong packet is broadcast to all the nodes of the cluster. Currently unreachable nodes will eventually be reconfigured when they receive a ping or pong packet from another node or will receive an `UPDATE` packet from another node if the information it publishes via heartbeat packets are detected to be out of date.
+다른 노드들의 재구성의 속도를 높이기 위해서, 퐁 패킷은 클러스터의 모든 노드에게 광범위하게 전파된다. 현재 연결할 수 없는 노드들은 핑/퐁 패킷을 다른 노드들로부터 받을 때 재구성되거나, 하트비트 패킷을 통해서 발행되는 정보가 오래된 것으로 감지되면 다른 노드로부터 `UPDATE` 패킷을 수신하게 될 것이다.
 
 The other nodes will detect that there is a new master serving the same slots served by the old master but with a greater `configEpoch`, and will upgrade their configuration. Replicas of the old master (or the failed over master if it rejoins the cluster) will not just upgrade the configuration but will also reconfigure to replicate from the new master. How nodes rejoining the cluster are configured is explained in the next sections.
+다른 노드들은 동일한 슬롯들을 이전(old) 마스터가 처리했지만, 더 큰 `configEpoch` 값을 가지는 새로운 마스터를 발견할 것이고, 자신의 구성을 업그레이드할 것이다. 이전 마스터의 리플리카들(또는 클러스터에 다시 합류하면서 페일오버된 마스터)은 구성을 업그레이드할 뿐만 아니라, 새로운 마스터를 복제하도록 재구성될 것이다.
 
-Masters reply to replica vote request
----
+### Masters reply to replica vote request [DONE]
 
 In the previous section it was discussed how replicas try to get elected. This section explains what happens from the point of view of a master that is requested to vote for a given replica.
+이전 섹션에서는 리플리카가 선출되기 위해 시도하는 방법에 대해서 이야기했다. 이번 섹션에서는 지정된 리플리카에 대해서 투표를 요청받는 마스터의 관점에서 무슨 일이 발생하는지를 설명할 것이다.
 
 Masters receive requests for votes in form of `FAILOVER_AUTH_REQUEST` requests from replicas.
+마스터는 리플리카로부터 `FAILOVER_AUTH_REQUEST` 요청의 형식으로 투표 요청을 수신한다.
 
 For a vote to be granted the following conditions need to be met:
+투표가 승인되기 위해서 다음의 조건들이 충족될 필요가 있다.
 
 1. A master only votes a single time for a given epoch, and refuses to vote for older epochs: every master has a lastVoteEpoch field and will refuse to vote again as long as the `currentEpoch` in the auth request packet is not greater than the lastVoteEpoch. When a master replies positively to a vote request, the lastVoteEpoch is updated accordingly, and safely stored on disk.
 2. A master votes for a replica only if the replica's master is flagged as `FAIL`.
 3. Auth requests with a `currentEpoch` that is less than the master `currentEpoch` are ignored. Because of this the master reply will always have the same `currentEpoch` as the auth request. If the same replica asks again to be voted, incrementing the `currentEpoch`, it is guaranteed that an old delayed reply from the master can not be accepted for the new vote.
 
+1. 마스터는 주어진 에포크동안에 한 번만 투표하고, 오래된 에포크에 대한 투표는 거절한다. 모든 마스터는 `lastVoteEpoch` 필드를 가지고, 인증 요청 패킷 내의 `currentEpoch`가 `lastVoteEpoch`보다 크지 않는 한은 재투표하는 것은 거절할 것이다.
+마스터가 투표 요청에 긍정적으로 응답할 때, `lastVoteEpoch`는 그에 따라 업데이트되고, 안전하게 디스크로 저장된다.
+2. 마스터는 리플리카의 마스터 노드가 `FAIL`로 플래그된 경우에만, 리플리카에 투표한다.
+3. 마스터의 `currentEpoch`보다 더 작은 `currentEpoch`를 가진 인증 요청은 무시된다. 이러한 이유로 마스터 응답은 항상 인증 요청과 동일한 `currentEpoch`를 가진다. 만약, 동일한 리플리카가 `currentEpoch`를 증가시켜서 다시 투표를 요청한다면, 마스터로부터의 오래된 지연된 응답은 새로운 투표에서는 받아들여지지 않는 것이 보장된다.
+
 Example of the issue caused by not using rule number 3:
+3번 규칙을 사용하지 않음으로써 발생하는 이슈의 예:
 
 Master `currentEpoch` is 5, lastVoteEpoch is 1 (this may happen after a few failed elections)
+마스터의 `currentEpoch`는 5이고, `lastVoteEpoch`는 1이다. (이것은 몇 번의 실패한 선거 후에 일어날 수 있다)
 
 * Replica `currentEpoch` is 3.
 * Replica tries to be elected with epoch 4 (3+1), master replies with an ok with `currentEpoch` 5, however the reply is delayed.
 * Replica will try to be elected again, at a later time, with epoch 5 (4+1), the delayed reply reaches the replica with `currentEpoch` 5, and is accepted as valid.
+
+* 리플리카의 `currentEpoch`는 3이다.
+* 리플리카는 epoch 4 (3+1)로 선거를 시도할 것이고, 마스터는 `currentEpoch` 5로 OK를 응답할 것이다. 하지만 응답은 지연된다.
+* 리플리카는 이후에 epoch 5 (4+1)를 이용해서 다시 선거를 시도할 것이고, `currentEpoch` 5를 가진 지연된 응답이 리플리카에 도달하고, 유효한 것으로 받아들여진다.
 
 4. Masters don't vote for a replica of the same master before `NODE_TIMEOUT * 2` has elapsed if a replica of that master was already voted for. This is not strictly required as it is not possible for two replicas to win the election in the same epoch. However, in practical terms it ensures that when a replica is elected it has plenty of time to inform the other replicas and avoid the possibility that another replica will win a new election, performing an unnecessary second failover.
 5. Masters make no effort to select the best replica in any way. If the replica's master is in `FAIL` state and the master did not vote in the current term, a positive vote is granted. The best replica is the most likely to start an election and win it before the other replicas, since it will usually be able to start the voting process earlier because of its *higher rank* as explained in the previous section.
 6. When a master refuses to vote for a given replica there is no negative response, the request is simply ignored.
 7. Masters don't vote for replicas sending a `configEpoch` that is less than any `configEpoch` in the master table for the slots claimed by the replica. Remember that the replica sends the `configEpoch` of its master, and the bitmap of the slots served by its master. This means that the replica requesting the vote must have a configuration for the slots it wants to failover that is newer or equal the one of the master granting the vote.
 
-Practical example of configuration epoch usefulness during partitions
----
+4. 만약 어떤 마스터의 한 리플리카가 이미 투표되었다면, 다른 마스터들은 동일한 마스터의 리플리카에 대해서는 `NODE_TIMEOUT * 2`가 경과되기 전에는 투표하지 않는다. 동일한 에포크 내에서 두 개의 리플리카가 선거에서 승리할 수는 없기 때문에 이것이 엄격하게 요구되지는 않는다. 하지만, 실제로는 리플리카가 선출되면 다른 리플리카에 알리기 위한 충분한 시간을 확보할 수 있고, 또 다른 리플리카가 새로운 선거에서 승리하여 불필요한 두 번째 페일오버가 수행될 수 있는 가능성을 막을 수 있다.
+5. 마스터는 어떤식으로든 최선의 리플리카를 선택하기 위해서 노력을 하지는 않는다. 만약 어떤 리플리카의 어떤 마스터가 `FAIL` 상태이고, (다른) 마스터는 현재의 조건에서 투표하지 않았다면, 찬성표가 부여된다. 최선의 리플리카는 다른 리플리카보다 먼저 선거를 시작하고 승리할 가능성이 높은데, 이것은 이전 섹션에서 설명한대로 *더 높은 순위(higher rank)* 덕분에 일반적으로는 더 일찍 투표 절차를 시작할 수 있기 때문이다.
+6. 마스터가 지정된 리플리카에 대한 투표를 거절할 때, 부정적인 응답은 없으며, 요청은 단순히 무시된다.
+7. 마스터는 리플리카가 소유를 주장하는 슬롯에 대해서, 마스터 테이블 내의 어떤 `configEpoch`보다 더 작은 `configEpoch`를 보내는 리플리카에는 투표하지 않는다. 리플리카는 자신의 마스터의 `configEpoch`와 마스터가 담당했던 슬롯의 비트맵을 보낸다는 것을 기억해야 한다. 이것은 투표를 요청하는 리플리카는 페일오버를 하기를 원하는 슬롯에 대한 구성(configEpoch)이 투표를 승인하는 마스터의 것과 같거나 또는 더 커야한다는 것을 의미한다.
+
+### Practical example of configuration epoch usefulness during partitions [DONE]
 
 This section illustrates how the epoch concept is used to make the replica promotion process more resistant to partitions.
+이 섹션에서는 리플리카 프로모션 프로세스를 파티션에 더 잘 견디게 하기 위해 에포크 컨셉이 사용되는 방법을 설명한다.
 
 * A master is no longer reachable indefinitely. The master has three replicas A, B, C.
 * Replica A wins the election and is promoted to master.
@@ -669,32 +717,46 @@ This section illustrates how the epoch concept is used to make the replica promo
 * A partition makes B not available for the majority of the cluster.
 * The previous partition is fixed, and A is available again.
 
+* 마스터는 무기한으로 더 이상 접근 가능하지 않다. 마스터는 A, B, C 각각 3개의 리플리카를 가진다.
+* 리플리카 A는 선거에서 승리하고, 마스터로 승격된다.
+* 네트워크 파티션은 클러스터의 과반수에서 A를 사용할 수 없는 상태로 만든다.
+* 리플리카 B는 선거에서 승리하고, 마스터로 승격된다.
+* 파티션은 클러스터의 과반수에서 B를 사용할 수 없는 상태로 만든다.
+* 이전 파티션이 해결되고, A가 다시 접근 가능해진다.
+
 At this point B is down and A is available again with a role of master (actually `UPDATE` messages would reconfigure it promptly, but here we assume all `UPDATE` messages were lost). At the same time, replica C will try to get elected in order to fail over B. This is what happens:
+이 시점에 B는 다운되었고, A는 마스터 역할로 다시 사용이 가능해진다(실제로 `UPDATE`메시지는 즉시 재구성하지만, 여기서는 모든 `UPDATE` 메시지가 손실된 것으로 가정한다). 동시에, 리플리카 C는 B를 페일오버하기 위해서 선거를 시도할 것이다.
 
 1. C will try to get elected and will succeed, since for the majority of masters its master is actually down. It will obtain a new incremental `configEpoch`.
 2. A will not be able to claim to be the master for its hash slots, because the other nodes already have the same hash slots associated with a higher configuration epoch (the one of B) compared to the one published by A.
 3. So, all the nodes will upgrade their table to assign the hash slots to C, and the cluster will continue its operations.
 
-As you'll see in the next sections, a stale node rejoining a cluster
-will usually get notified as soon as possible about the configuration change
-because as soon as it pings any other node, the receiver will detect it
-has stale information and will send an `UPDATE` message.
+1. 과반 수의 마스터에게 C의 마스터가 실제로 다운상태이므로, C는 선거를 시도할 것이고, 성공할 것이다. 그리고 새로운 증분된 `configEpoch` 값을 획득할 것이다.
+2. A는 그 해시 슬롯들의 마스터라고 주장할 수가 없는데, 왜냐하면 다른 노드들은 A가 제시하는 것과 비교해서 더 높은 `configEpoch`(B의 것)와 연결된 동일한 해시 슬롯을 이미 가지고 있기 때문이다.
+3. 그래서 모든 노드는 해시 슬롯들을 C로 할당하기 위해 그들의 테이블을 업그레이드 할 것이고, 클러스터는 동작을 계속할 것이다.
 
-Hash slots configuration propagation
----
+As you'll see in the next sections, a stale node rejoining a cluster will usually get notified as soon as possible about the configuration change because as soon as it pings any other node, the receiver will detect it has stale information and will send an `UPDATE` message.
+다음 섹션에서 볼 수 있듯이, 클러스터에 다시 합류하는 오래된 노드는 일반적으로 구성 정보의 변경에 대해 가능한한 빠르게 통지를 받는데, 왜냐하면 다른 어떤 노드에게 핑을 보내자마자, 수신하는 노드는 보낸 노드가 오래된 정보를 가지고 있는 것을 알아차리고, `UPDATE`메시지를 보낼 것이기 때문이다.
+
+### Hash slots configuration propagation [DONE]
 
 An important part of Redis Cluster is the mechanism used to propagate the information about which cluster node is serving a given set of hash slots. This is vital to both the startup of a fresh cluster and the ability to upgrade the configuration after a replica was promoted to serve the slots of its failing master.
+레디스 클러스터의 중요한 부분은 어떤 클러스터 노드가 지정된 해시 슬롯의 집합을 서빙하고 있는지에 관한 정보를 전파하는데 사용되는 메커니즘이다. 이것은 새로운 클러스터를 시작하고, 리플리카가 장애난 마스터의 슬롯들을 서빙하도록 승격된 이후에 구성 정보를 업그레이드 하는 기능 모두에서 중요하다. 
 
-The same mechanism allows nodes partitioned away for an indefinite amount of
-time to rejoin the cluster in a sensible way.
+The same mechanism allows nodes partitioned away for an indefinite amount of time to rejoin the cluster in a sensible way.
+동일한 메커니즘은 일정 시간동안 파티션된 노드가 합리적인 방식으로 클러스터에 다시 합류할 수 있게 한다.
 
 There are two ways hash slot configurations are propagated:
+해시 슬롯의 구성 정보가 전파되는 2가지 방법이 있다.
 
 1. Heartbeat messages. The sender of a ping or pong packet always adds information about the set of hash slots it (or its master, if it is a replica) serves.
 2. `UPDATE` messages. Since in every heartbeat packet there is information about the sender `configEpoch` and set of hash slots served, if a receiver of a heartbeat packet finds the sender information is stale, it will send a packet with new information, forcing the stale node to update its info.
 
-The receiver of a heartbeat or `UPDATE` message uses certain simple rules in
-order to update its table mapping hash slots to nodes. When a new Redis Cluster node is created, its local hash slot table is simply initialized to `NULL` entries so that each hash slot is not bound or linked to any node. This looks similar to the following:
+1. 하트비트 메시지. 핑/퐁 패킷을 전송하는 노드는 항상 자신이 제공하는 해시 슬롯의 집합에 대한 정보(리플리카라면, 자신의 마스터의)를 추가한다.
+2. `UPDATE` 메시지. 모든 하트비트 패킷 내에는 보내는 노드의 `configEpoch`와 제공하는 해시 슬롯의 집합에 관한 정보가 있고, 만약 하트비트 패킷을 수신하는 노드가 보내는 노드의 정보가 오래된 것을 알게 되면, 새로운 정보와 함께 패킷을 보내고, 오래된 노드가 정보를 업데이트 할 수 있도록 한다. 
+
+The receiver of a heartbeat or `UPDATE` message uses certain simple rules in order to update its table mapping hash slots to nodes. When a new Redis Cluster node is created, its local hash slot table is simply initialized to `NULL` entries so that each hash slot is not bound or linked to any node. This looks similar to the following:
+하트비트나 `UPDATE` 메시지의 수신자는 해시 슬롯과 노드를 맵핑하는 자신의 테이블을 업데이트하기 위해서 어떤 간단한 룰을 사용한다. 새로운 레디스 클러스터 노드가 만들어지면, 로컬의 해시 슬롯 테이블은 단순히 `NULL` 엔트리로 초기화되고, 그래서 각 해시 슬롯은 어떤 노드와도 바인딩되거나 연결되지 않는다. 이것은 다음과 유사하다.
 
 ```
 0 -> NULL
@@ -705,10 +767,13 @@ order to update its table mapping hash slots to nodes. When a new Redis Cluster 
 ```
 
 The first rule followed by a node in order to update its hash slot table is the following:
+노드가 해시 슬롯 테이블 업데이트 하기 위한 첫 번째 룰은 다음과 같다.
 
 **Rule 1**: If a hash slot is unassigned (set to `NULL`), and a known node claims it, I'll modify my hash slot table and associate the claimed hash slots to it.
+**Rule 1**: 만약 해시 슬롯이 (`NULL`로 설정되어) 할당되지 않은 상태이고, 그것에 대해 어떤 노드가 소유를 주장한다면, 해시 슬롯 테이블을 수정하고, 소유를 주장하는 슬롯들을 연결시킨다.
 
 So if we receive a heartbeat from node A claiming to serve hash slots 1 and 2 with a configuration epoch value of 3, the table will be modified to:
+그래서 A 노드로부터 `configEpoch` 값 3으로, 해시 슬롯 1과 2를 처리한다고 주장하는 하트비트 메시지를 받으면, 테이블은 다음과 같이 수정된다.
 
 ```
 0 -> NULL
@@ -719,24 +784,26 @@ So if we receive a heartbeat from node A claiming to serve hash slots 1 and 2 wi
 ```
 
 When a new cluster is created, a system administrator needs to manually assign (using the `CLUSTER ADDSLOTS` command, via the redis-cli command line tool, or by any other means) the slots served by each master node only to the node itself, and the information will rapidly propagate across the cluster.
+새로운 클러스터가 생성되면, 시스템 관리자는 슬롯들을 각각의 해당하는 마스터 노드에만 수동으로(`CLUSTER ADDSLOTS` 커맨드를 이용하고, redis-cli 커맨드 라인 툴 또는 다른 방법으로) 할당할 필요가 있고, 이러한 정보는 클러스터 전체에 빠르게 전파된다.
 
-However this rule is not enough. We know that hash slot mapping can change
-during two events:
+However this rule is not enough. We know that hash slot mapping can change during two events:
+그러나 이 룰은 충분하지 않다. 해시 슬롯 맵핑은 2가지 이벤트 동안에 바뀔 수 있다.
 
 1. A replica replaces its master during a failover.
 2. A slot is resharded from a node to a different one.
 
-For now let's focus on failovers. When a replica fails over its master, it obtains
-a configuration epoch which is guaranteed to be greater than the one of its
-master (and more generally greater than any other configuration epoch
-generated previously). For example node B, which is a replica of A, may failover
-A with configuration epoch of 4. It will start to send heartbeat packets
-(the first time mass-broadcasting cluster-wide) and because of the following
-second rule, receivers will update their hash slot tables:
+1. 리플리카는 페일오버 동안에 자신의 마스터를 대체한다.
+2. 슬롯은 한 노드에서 다른 한 노드로 재분배된다.
+
+For now let's focus on failovers. When a replica fails over its master, it obtains a configuration epoch which is guaranteed to be greater than the one of its master (and more generally greater than any other configuration epoch generated previously). For example node B, which is a replica of A, may failover A with configuration epoch of 4. It will start to send heartbeat packets (the first time mass-broadcasting cluster-wide) and because of the following second rule, receivers will update their hash slot tables:
+
+이제 페일오버에 초점을 맞춰보자. 리플리카가 자신의 마스터를 페일오버하면, 마스터의 값보다 더 큰 것이 보장되는 새로운 `configEpoch`를 획득한다(그리고 일반적으로 이전에 생성된 다른 어떤 `configEpoch`보다 더 크다). 예를 들어, A노드의 리플리카인 B노드는 `configEpoch` 4를 가지고 A노드를 페일오버 할 수 있다. 하트비트 패킷을 보내기 시작하고 (처음에는 클러스터 전체에 대량으로), 다음의 2번째 룰 때문에 수신자는 자신의 해시 슬롯 테이블을 업데이트할 것이다.
 
 **Rule 2**: If a hash slot is already assigned, and a known node is advertising it using a `configEpoch` that is greater than the `configEpoch` of the master currently associated with the slot, I'll rebind the hash slot to the new node.
+만약 해시 슬롯이 이미 할당되어 있고, 알려진 노드가 현재 슬롯과 연결된 마스터의 `configEpoch`보다 더 큰 `configEpoch`를 이용해서 알리는 경우, 해시 슬롯은 새로운 노드로 다시 바인딩된다.
 
 So after receiving messages from B that claim to serve hash slots 1 and 2 with configuration epoch of 4, the receivers will update their table in the following way:
+그래서 B노드로부터 `configEpoch` 4를 가지고 해시 슬롯 1과 2를 담당한다고 주장하는 메시지를 수신한 이후에, 수신하는 노드들은 다음과 같은 방법으로 테이블을 업데이트할 것이다.
 
 ```
 0 -> NULL
@@ -748,78 +815,68 @@ So after receiving messages from B that claim to serve hash slots 1 and 2 with c
 
 Liveness property: because of the second rule, eventually all nodes in the cluster will agree that the owner of a slot is the one with the greatest `configEpoch` among the nodes advertising it.
 
+필연성(Liveness property): 두 번째 룰 때문에, 결국 클러스터 내의 모든 노드는 어떤 한 슬롯의 주인은 노드들 사이에서 가장 큰 `configEpoch`를 알려오는 노드라는 것에 동의할 것이다.
+
+> **안전성(safety properties)**: 프로토콜이 절대로 받아들일 수 없는 상태로 들어가지 않 음을 의미하며, 프로토콜이 더 이상 진전되지 않는 상태, 즉 어떠한 전송도 가능하지 않는 상태인 deadlock 이 없고, 프로토콜이 비생산적인 주기, 즉 같은 경로를 계속 반 복하는 경로를 가지고 같은 메시지의 교환이 유한의 개수만큼 또는 무한으로 행하여지 는 상태에 들어가지 않는 livelock이 없음을 의미한다.
+>
+> **필연성(liveness properties)**: 프로토콜이 궁극적으로 만족할 만한 상태로 들어감을 의 미한다. 즉 각각의 도달할 수 있는 상태에서 어떤 다른 상태로 도달 가능하는 것을 의 미하며, 유한의 시간 내에 요구되는 서비스의 완료를 나타내며 종결하는 프로토콜인 경우 프로토콜이 항상 만족할 만한 최종상태에 도달함을 의미하며 주기적인 프로토콜 에 관련되며 프로토콜은 항상 초기상태에 도달하는 것을 의미한다.
+>
+> https://yunkt.hatenablog.com/entry/2019/01/15/093830
+
 This mechanism in Redis Cluster is called **last failover wins**.
+레디스 클러스터에서 이러한 메커니즘을 **last failover wins**라고 부른다.
 
-The same happens during resharding. When a node importing a hash slot completes
-the import operation, its configuration epoch is incremented to make sure the
-change will be propagated throughout the cluster.
+The same happens during resharding. When a node importing a hash slot completes the import operation, its configuration epoch is incremented to make sure the change will be propagated throughout the cluster.
+동일한 일은 리샤딩중에 발생할 수 있다. 해시 슬롯을 가져오는 노드는 해당 작업이 완료되면, 변경된 사항이 클러스터로 전파되는 것을 보장하기 위해서 `configEpoch`를 증분시킨다. 
 
-UPDATE messages, a closer look
----
+### UPDATE messages, a closer look [DONE]
 
-With the previous section in mind, it is easier to see how update messages
-work. Node A may rejoin the cluster after some time. It will send heartbeat
-packets where it claims it serves hash slots 1 and 2 with configuration epoch
-of 3. All the receivers with updated information will instead see that
-the same hash slots are associated with node B having an higher configuration
-epoch. Because of this they'll send an `UPDATE` message to A with the new
-configuration for the slots. A will update its configuration because of the
-**rule 2** above.
+With the previous section in mind, it is easier to see how update messages work. Node A may rejoin the cluster after some time. It will send heartbeat packets where it claims it serves hash slots 1 and 2 with configuration epoch of 3. All the receivers with updated information will instead see that the same hash slots are associated with node B having an higher configuration epoch. Because of this they'll send an `UPDATE` message to A with the new configuration for the slots. A will update its configuration because of the **rule 2** above.
+이전 섹션을 염두해두면, `UPDATE`메시지가 동작하는 방법을 더 쉽게 알 수 있다. A노드는 일정 시간이후 클러스터에 다시 합류할 수도 있다. 그러면 A노드는 `configEpoch` 3으로 해시 슬롯 1과 2를 가지고 있다고 주장하는 하트비트 패킷을 보낼 것이다. 이 업데이트된 정보의 모든 수신자는 대신 동일한 해시 슬롯들이 더 큰 `configEpoch`를 가지는 B노드와 연결이 되어 있다는 것을 알 수 있다. 이 때문에 수신자들은 그 슬롯들에 대한 새로운 구성 정보와 함께 `UPDATE` 메시지를 A노드로 보낼 것이다. A노드는 위의 **rule 2** 때문에 자신의 구성 정보를 업데이트할 것이다.
 
-How nodes rejoin the cluster
----
 
-The same basic mechanism is used when a node rejoins a cluster.
-Continuing with the example above, node A will be notified
-that hash slots 1 and 2 are now served by B. Assuming that these two were
-the only hash slots served by A, the count of hash slots served by A will
-drop to 0! So A will **reconfigure to be a replica of the new master**.
+### How nodes rejoin the cluster [DONE]
 
-The actual rule followed is a bit more complex than this. In general it may
-happen that A rejoins after a lot of time, in the meantime it may happen that
-hash slots originally served by A are served by multiple nodes, for example
-hash slot 1 may be served by B, and hash slot 2 by C.
+The same basic mechanism is used when a node rejoins a cluster. Continuing with the example above, node A will be notified that hash slots 1 and 2 are now served by B. Assuming that these two were the only hash slots served by A, the count of hash slots served by A will drop to 0! So A will **reconfigure to be a replica of the new master**.
+노드가 클러스터에 다시 합류할 때에도 동일한 기본 메커니즘이 사용된다. 위의 예를 이이서, A노드는 해시 슬롯 1과 2는 지금 B가 제공하고 있다는 것을 알아차릴 것이다. 이 2개가 A노드가 제공했었던 유일한 해시 슬롯이라고 가정하면, A가 제공하는 해시 슬롯의 수는 0이 된다! 그래서 A노드는 **새로운 마스터의 리플리카로 재구성된다**.
+
+The actual rule followed is a bit more complex than this. In general it may happen that A rejoins after a lot of time, in the meantime it may happen that hash slots originally served by A are served by multiple nodes, for example hash slot 1 may be served by B, and hash slot 2 by C.
+실제 규칙은 이것보다 조금 더 복잡하다. 일반적으로 A노드는 많은 시간이 지난 이후에 클러스터에 다시 합류할 수 있고, 그동안 원래 A에서 제공되었던 해시 슬롯들은 다른 여러 노드들에서 제공되고 있을 수도 있다. 예를 들어 해시 슬롯 1은 B, 해시 슬롯 2는 C에 의해서 제공될 수 있다.
 
 So the actual *Redis Cluster node role switch rule* is: **A master node will change its configuration to replicate (be a replica of) the node that stole its last hash slot**.
+그래서 실제로 *레디스 클러스터 노드의 롤 변경 규칙*은 **어떤 마스터 노드가 자신의 마지막 해시 슬롯을 가져간 노드를 복제하고 리플리카가 되는 것으로 구성을 변경하는 것이다.**
 
 During reconfiguration, eventually the number of served hash slots will drop to zero, and the node will reconfigure accordingly. Note that in the base case this just means that the old master will be a replica of the replica that replaced it after a failover. However in the general form the rule covers all possible cases.
+재구성하는 동안, 결국 제공되는 해시 슬롯의 수는 0으로 떨어지며, 이에 따라 노드가 재구성된다. 기본적으로 이것은 이전 마스터가 페일오버 이후 대체된 리플리카의 리플리카가 될 것이라는 것을 의미한다. 하지만 일반적인 형태에서는 규칙은 가능한 모든 케이스를 다룬다.
 
-Replicas do exactly the same: they reconfigure to replicate the node that
-stole the last hash slot of its former master.
+Replicas do exactly the same: they reconfigure to replicate the node that stole the last hash slot of its former master.
+리플리카들은 정확히 동일하게 동작하는데, 이전 마스터의 마지막 해시 슬롯을 가져간 노드를 복제하도록 재구성된다.
 
-Replica migration
----
+### Replica migration [DONE]
 
-Redis Cluster implements a concept called *replica migration* in order to
-improve the availability of the system. The idea is that in a cluster with
-a master-replica setup, if the map between replicas and masters is fixed
-availability is limited over time if multiple independent failures of single
-nodes happen.
+Redis Cluster implements a concept called *replica migration* in order to improve the availability of the system. The idea is that in a cluster with a master-replica setup, if the map between replicas and masters is fixed availability is limited over time if multiple independent failures of single nodes happen.
+레디스 클러스터는 시스템의 가용성을 향상 시키기 위해서 *리플리카 마이그레이션(replica migration)*이라고 부르는 개념을 구현한다. 이 이이디어는 마스터-리플리카 셋업의 클러스터내에서 마스터와 리플리카 사이의 맵핑이 고정된다면, 단일 노드의 장애가 여러 차례 발생할 때, 가용성은 시간이 지남에 따라 제한이 될 수 있다는 것을 의미한다.
 
-For example in a cluster where every master has a single replica, the cluster
-can continue operations as long as either the master or the replica fail, but not
-if both fail the same time. However there is a class of failures that are
-the independent failures of single nodes caused by hardware or software issues
-that can accumulate over time. For example:
+For example in a cluster where every master has a single replica, the cluster can continue operations as long as either the master or the replica fail, but not if both fail the same time. However there is a class of failures that are the independent failures of single nodes caused by hardware or software issues that can accumulate over time. For example:
+예를 들어, 모든 마스터들이 각각 하나의 리플리카를 가지는 클러스터 내에서, 마스터나 리플리카 둘 중 하나에서만 장애가 나는 한은 계속해서 동작할 수 있지만, 동시에 둘다 실패한다면 동작할 수 없을 것이다. 하지만 시간이 지남에 따라서 누적될 수 있는, 하드웨어나 소프트웨어에 의해 발생하는 단일 노드의 개별적인 장애와 같은 실패의 케이스가 있다. 예를 들면 다음과 같다.
 
 * Master A has a single replica A1.
 * Master A fails. A1 is promoted as new master.
 * Three hours later A1 fails in an independent manner (unrelated to the failure of A). No other replica is available for promotion since node A is still down. The cluster cannot continue normal operations.
 
-If the map between masters and replicas is fixed, the only way to make the cluster
-more resistant to the above scenario is to add replicas to every master, however
-this is costly as it requires more instances of Redis to be executed, more
-memory, and so forth.
+* 마스터 A는 단일 리플리카 A1을 가진다.
+* 마스터 A가 실패한다. A1은 새로운 마스터로 승격된다.
+* 3시간 이후, A1은 (A의 장애와 관련이 없는) 개별적인 방식으로 실패한다. A가 여전히 다운된 상태이므로, 승격이 가능한 다른 리플리카는 없다.
 
-An alternative is to create an asymmetry in the cluster, and let the cluster
-layout automatically change over time. For example the cluster may have three
-masters A, B, C. A and B have a single replica each, A1 and B1. However the master
-C is different and has two replicas: C1 and C2.
+If the map between masters and replicas is fixed, the only way to make the cluster more resistant to the above scenario is to add replicas to every master, however this is costly as it requires more instances of Redis to be executed, more memory, and so forth.
 
-Replica migration is the process of automatic reconfiguration of a replica
-in order to *migrate* to a master that has no longer coverage (no working
-replicas). With replica migration the scenario mentioned above turns into the
-following:
+마스터와 리플리카 사이의 맵핑이 고정되어 있을 때, 위와 같은 시나리오에 대해서 클러스터를 더 잘 견디게 만들기 위한 유일한 방법은 모든 마스터에 리플리카를 더 추가하는 것이지만, 이것은 더 많은 레디스 인스턴스와 메모리 등으로 인해서 비용이 많이 든다.
+
+An alternative is to create an asymmetry in the cluster, and let the cluster layout automatically change over time. For example the cluster may have three masters A, B, C. A and B have a single replica each, A1 and B1. However the master C is different and has two replicas: C1 and C2.
+대안으로는 클러스터를 비대칭으로 만들고, 클러스터 레이아웃이 시간에 따라 자동으로 변경되도록 하는 것이다. 예를 들어, 클러스터는 A, B, C 3개의 마스터 노드를 가지고 있다. A와 B는 각각 A1과 B1의 단일 리플리카만 가지고 있다. 하지만 마스터 C는 이와 다르게 C1과 C2, 2개의 리플리카를 가지고 있다.
+
+Replica migration is the process of automatic reconfiguration of a replica in order to *migrate* to a master that has no longer coverage (no working replicas). With replica migration the scenario mentioned above turns into the following:
+리플리카 마이그레이션은 더 이상 보호되지 않는 마스터로 *마이그레이션(migrate)* 하기 위해 리플리카를 자동으로 재구성 프로세스이다. 리플리카 마이그레이션에서는 위에서 언급한 시나리오가 다음과 같이 바뀐다.
 
 * Master A fails. A1 is promoted.
 * C2 migrates as replica of A1, that is otherwise not backed by any replica.
@@ -827,129 +884,92 @@ following:
 * C2 is promoted as new master to replace A1.
 * The cluster can continue the operations.
 
-Replica migration algorithm
----
+* 마스터 A가 실패한다. A1은 승격된다.
+* C2는 A1의 리플리카로 마이그레이션되고, 그렇지 않으면 A1은 어떤 리플리카로도 지지해주지 않는다.
+* 3시간 후에 A1도 실패한다.
+* C2는 A1을 대체하기 위해서 마스터로 승격된다.
+* 클러스터는 계속해서 동작할 수 있다.
 
-The migration algorithm does not use any form of agreement since the replica
-layout in a Redis Cluster is not part of the cluster configuration that needs
-to be consistent and/or versioned with config epochs. Instead it uses an
-algorithm to avoid mass-migration of replicas when a master is not backed.
-The algorithm guarantees that eventually (once the cluster configuration is
-stable) every master will be backed by at least one replica.
+### Replica migration algorithm [DONE]
 
-This is how the algorithm works. To start we need to define what is a
-*good replica* in this context: a good replica is a replica not in `FAIL` state
-from the point of view of a given node.
+The migration algorithm does not use any form of agreement since the replica layout in a Redis Cluster is not part of the cluster configuration that needs to be consistent and/or versioned with config epochs. Instead it uses an algorithm to avoid mass-migration of replicas when a master is not backed. The algorithm guarantees that eventually (once the cluster configuration is stable) every master will be backed by at least one replica.
+마이그레이션 알고리즘은 어떠 형태의 합의도 사용하지 않는데, 레디스 클러스터에서 리플리카 레이아웃은 configEpoch와 일치하거나 또는 버전 관리가 필요한 클러스터 구성의 일부분이 아니기 때문이다. 대신 어떤 마스터가 보호되지 않을 때, 리플리카들이 대량으로 마이그레이션되는 것을 막기 위한 알고리즘을 사용한다. 이 알고리즘은 결국 (클러스터의 구성이 안정되면) 모든 마스터는 적어도 하나 이상의 리플리카에 의해서 보호될 것이라는 보장한다.
 
-The execution of the algorithm is triggered in every replica that detects that
-there is at least a single master without good replicas. However among all the
-replicas detecting this condition, only a subset should act. This subset is
-actually often a single replica unless different replicas have in a given moment
-a slightly different view of the failure state of other nodes.
+This is how the algorithm works. To start we need to define what is a *good replica* in this context: a good replica is a replica not in `FAIL` state from the point of view of a given node.
+이것은 알고리즘이 동작하는 방법이다. 시작하기 전에, 이 문맥에서 *좋은 리플리카(good replica)*가 무엇인지 정의할 필요가 있다. 좋은 리플리카는 주어진 노드의 관점에서 `FAIL` 상태가 아닌 리플리카이다.
 
-The *acting replica* is the replica among the masters with the maximum number
-of attached replicas, that is not in FAIL state and has the smallest node ID.
+The execution of the algorithm is triggered in every replica that detects that there is at least a single master without good replicas. However among all the replicas detecting this condition, only a subset should act. This subset is actually often a single replica unless different replicas have in a given moment a slightly different view of the failure state of other nodes.
+알고리즘의 실행은 좋은 리플리카(good replica)가 없는 단일 마스터가 적어도 하나 이상이 있다는 것을 발견한 모든 리플리카에서 촉발된다. 그러나 이러한 조건을 감지한 모든 리플리카에서 부분 집합(subset)만 움직여야 한다. 주어진 순간에 다른 노드의 실패에 대해 아주 약간 다른 관점을 가지는 다른 리플리카들을 제외하고, 실제로 이 부분 집합은 대부분 단일 리플리카이다.
 
-So for example if there are 10 masters with 1 replica each, and 2 masters with
-5 replicas each, the replica that will try to migrate is - among the 2 masters
-having 5 replicas - the one with the lowest node ID. Given that no agreement
-is used, it is possible that when the cluster configuration is not stable,
-a race condition occurs where multiple replicas believe themselves to be
-the non-failing replica with the lower node ID (it is unlikely for this to happen
-in practice). If this happens, the result is multiple replicas migrating to the
-same master, which is harmless. If the race happens in a way that will leave
-the ceding master without replicas, as soon as the cluster is stable again
-the algorithm will be re-executed again and will migrate a replica back to
-the original master.
+The *acting replica* is the replica among the masters with the maximum number of attached replicas, that is not in FAIL state and has the smallest node ID.
+*움직이는 리플리카(action replica)*는 가장 많은 수의 리플리카가 있는 마스터 내에서의 리플리카이고, FAIL 상태가 아니고, 가장 작은 노드 ID를 가진다.
 
-Eventually every master will be backed by at least one replica. However,
-the normal behavior is that a single replica migrates from a master with
-multiple replicas to an orphaned master.
+So for example if there are 10 masters with 1 replica each, and 2 masters with 5 replicas each, the replica that will try to migrate is - among the 2 masters having 5 replicas - the one with the lowest node ID. Given that no agreement is used, it is possible that when the cluster configuration is not stable, a race condition occurs where multiple replicas believe themselves to be the non-failing replica with the lower node ID (it is unlikely for this to happen in practice). If this happens, the result is multiple replicas migrating to the same master, which is harmless. If the race happens in a way that will leave the ceding master without replicas, as soon as the cluster is stable again the algorithm will be re-executed again and will migrate a replica back to the original master.
 
-The algorithm is controlled by a user-configurable parameter called
-`cluster-migration-barrier`: the number of good replicas a master
-must be left with before a replica can migrate away. For example, if this
-parameter is set to 2, a replica can try to migrate only if its master remains
-with two working replicas.
+따라서 예를 들어, 만약 리플리카를 각각 1개씩 가지는 10개의 마스터가 있고, 리플리카를 각각 5개씩 가지는 마스터가 있다고 할 때, 마이그레이션을 시도할 리플리카는 5개의 리플리카를 가지는 2개의 마스터 중에서 가장 작은 노드 ID를 가진 것이다. 합의가 사용되지 않는 것을 고려하면, 클러스터의 구성이 안정적이지 않을 때, 둘 이상의 리플리카가 스스로 실패 상태가 아닌 리플리카이고, 노드 ID가 가장 작다고 믿을 때, 경합 조건에 발생할 수 있다 (실제 이것이 발생할 가능성은 거의 없다). 만약, 이것이 발생하면, 그 결과로 복수의 리플리카가 동일한 마스터로 마이그레이션하지만, 이는 특별히 문제가 없다.  만약 양도하는 마스터가 리플리카가 없이 남게 되는 방식으로 경쟁이 발생하면, 클러스터가 다시 안정되자마자 알고리즘이 다시 실행되고, 리플리카는 원본 마스터로 다시 마이그레이션될 것이다.
 
-configEpoch conflicts resolution algorithm
----
+Eventually every master will be backed by at least one replica. However, the normal behavior is that a single replica migrates from a master with multiple replicas to an orphaned master.
+결국 모든 마스터는 적어도 하나 이상의 리플리카에 의해서 보호된다. 하지만, 일반적인 동작은 단일 리플리카는 복수의 리플리카를 가진 마스터로부터 리플리카가 없는(orphaned) 마스터로 마이그레이션되는 것이다.
 
-When new `configEpoch` values are created via replica promotion during
-failovers, they are guaranteed to be unique.
+The algorithm is controlled by a user-configurable parameter called `cluster-migration-barrier`: the number of good replicas a master must be left with before a replica can migrate away. For example, if this parameter is set to 2, a replica can try to migrate only if its master remains with two working replicas.
+이 알고리즘은 사용자가 직접 설정할 수 있는 파라미터인 `cluster-migration-barrier`에 의해서 제어된다. 이것은 리플리카가 마이그레이션되기 전에, 마스터에 남아 있어야 하는 좋은 리플리카의 수를 의미한다. 예를 들어, 이 파라미터가 2로 설정되어 있다면, 리플리카는 오직 마스터가 동작하는 2개의 리플리카와 함께 남아있는 경우에만, 리플리카이 마이그레이션을 시도할 수 있다.
 
-However there are two distinct events where new configEpoch values are
-created in an unsafe way, just incrementing the local `currentEpoch` of
-the local node and hoping there are no conflicts at the same time.
-Both the events are system-administrator triggered:
+### configEpoch conflicts resolution algorithm [DONE]
+
+When new `configEpoch` values are created via replica promotion during failovers, they are guaranteed to be unique.
+페일오버동안에 리플리카의 승격을 통해서 새로운 `configEpoch`값이 만들어졌을 때, 이 값은 유니크한 것이 보장된다.
+
+However there are two distinct events where new configEpoch values are created in an unsafe way, just incrementing the local `currentEpoch` of the local node and hoping there are no conflicts at the same time. Both the events are system-administrator triggered:
+그러나 새로운 `configEpoch`값이 안전하지 않은 방식으로 만들어지는 2개의 고유한 이벤트가 있다. 이것은 로컬 노드의 `currentEpoch` 값을 증가시키고, 같은 시간에 충돌이 없기를 바랄 뿐이다. 두 이벤트는 시스템 관리자에 의해 만들어진다.
 
 1. `CLUSTER FAILOVER` command with `TAKEOVER` option is able to manually promote a replica node into a master *without the majority of masters being available*. This is useful, for example, in multi data center setups.
 2. Migration of slots for cluster rebalancing also generates new configuration epochs inside the local node without agreement for performance reasons.
 
-Specifically, during manual resharding, when a hash slot is migrated from
-a node A to a node B, the resharding program will force B to upgrade
-its configuration to an epoch which is the greatest found in the cluster,
-plus 1 (unless the node is already the one with the greatest configuration
-epoch), without requiring agreement from other nodes.
-Usually a real world resharding involves moving several hundred hash slots
-(especially in small clusters). Requiring an agreement to generate new
-configuration epochs during resharding, for each hash slot moved, is
-inefficient. Moreover it requires an fsync in each of the cluster nodes
-every time in order to store the new configuration. Because of the way it is
-performed instead, we only need a new config epoch when the first hash slot is moved,
-making it much more efficient in production environments.
+1. `TAKOVER`옵션이 있는 `CLUSTER FAILOVER` 커맨드는 *접근 가능한 과반수 이상의 마스터 없이도* 수동으로 리플리카 노드를 마스터로 승격시킬 수 있다. 이것은 예를 들어 멀티 데이터 센터의 구축에 유용하다.
+2. 클러스터 리밸런싱을 위한 슬롯의 마이그레이션 또한 성능의 이유로 동의 없이, 로컬 노드 내에서 새로운 `configEpoch`를 만들어낸다.
 
-However because of the two cases above, it is possible (though unlikely) to end
-with multiple nodes having the same configuration epoch. A resharding operation
-performed by the system administrator, and a failover happening at the same
-time (plus a lot of bad luck) could cause `currentEpoch` collisions if
-they are not propagated fast enough.
+Specifically, during manual resharding, when a hash slot is migrated from a node A to a node B, the resharding program will force B to upgrade its configuration to an epoch which is the greatest found in the cluster, plus 1 (unless the node is already the one with the greatest configuration epoch), without requiring agreement from other nodes. Usually a real world resharding involves moving several hundred hash slots (especially in small clusters). Requiring an agreement to generate new configuration epochs during resharding, for each hash slot moved, is inefficient. Moreover it requires an fsync in each of the cluster nodes every time in order to store the new configuration. Because of the way it is performed instead, we only need a new config epoch when the first hash slot is moved, making it much more efficient in production environments.
+특히, 수동 리샤딩동안에 해시 슬롯이 A노드에서 B노드로 마이그레이션될 때, 리샤딩 프로그램은 다른 노드의 동의를 요구하지 않고, (노드가 이미 가장 큰 `configEpoch`를 가진 노드가 아닌 경우에) 클러스터 내에서 찾은 가장 큰 에포크에 1을 더해서 B의 구성을 업그레이드할 것이다. 일반적으로 현실 세계의 리샤딩은 수백개의 해시 슬롯(특히 작은 클러스터의 경우)의 이동을 포함한다. 리샤딩동안, 이동된 해시 슬롯에 각각에 대해서 새로운 `configEpoch`를 만들어서 동의를 요구하는 것은 효율적이지 않다. 게다가 각각의 클러스터 노드에서는 새로운 구성 정보를 저장하기 위해 매번 fsync를 필요로 한다. 그 대신 수행되는 방식으로, 첫 번째 슬롯이 이동될 때에만 새로운 `configEpoch`가 필요하고, 이것은 프로덕션 환경에서 훨씬 더 효율적이다.
 
-Moreover, software bugs and filesystem corruptions can also contribute
-to multiple nodes having the same configuration epoch.
+However because of the two cases above, it is possible (though unlikely) to end with multiple nodes having the same configuration epoch. A resharding operation performed by the system administrator, and a failover happening at the same time (plus a lot of bad luck) could cause `currentEpoch` collisions if they are not propagated fast enough.
+하지만 위의 2가지 케이스 때문에, (가능하지 않지만) 여러 노드가 동일한 `configEpoch`를 가지는 결과가 될 수도 있다. 시스템 관리자에 의해서 실행되는 리샤딩 작업과 (많은 불행이 더해져서) 동시에 발생한 페일오버가 충분히 빠르게 전파되지 않을 경우에는 `currentEpoch` 충돌이 발생할 수 있다.
 
-When masters serving different hash slots have the same `configEpoch`, there
-are no issues. It is more important that replicas failing over a master have
-unique configuration epochs.
+Moreover, software bugs and filesystem corruptions can also contribute to multiple nodes having the same configuration epoch.
+게다가, 소프트웨어의 버그와 파일 시스템의 손상 역시 복수의 노드가 동일한 구성 에포크 값을 가지게 되는 것에 기여할 수도 있다.
 
-That said, manual interventions or resharding may change the cluster
-configuration in different ways. The Redis Cluster main liveness property
-requires that slot configurations always converge, so under every circumstance
-we really want all the master nodes to have a different `configEpoch`.
+When masters serving different hash slots have the same `configEpoch`, there are no issues. It is more important that replicas failing over a master have unique configuration epochs.
+마스터가 서로 다른 해시 슬롯을 제공할 때, 동일한 `configEpoch`는 문제가 없다. 마스터를 페일오버하는 리플리카가 유니크한 구성 에포크를 가지는 것이 더 중요하다.
 
-In order to enforce this, **a conflict resolution algorithm** is used in the
-event that two nodes end up with the same `configEpoch`.
+That said, manual interventions or resharding may change the cluster configuration in different ways. The Redis Cluster main liveness property requires that slot configurations always converge, so under every circumstance we really want all the master nodes to have a different `configEpoch`.
+즉, 수동 개입 또는 리샤딩은 클러스터의 구성을 서로 다른 방식으로 바꿀 수 있다. 레디스 클러스터의 주요 필연성(liveness property)은 슬롯의 구성은 항상 수렴되므로 모든 상황에서 모든 마스터 노드가 서로 다른 `configEpoch`를 가질 것을 요구한다.
 
-* IF a master node detects another master node is advertising itself with
-the same `configEpoch`.
+In order to enforce this, **a conflict resolution algorithm** is used in the event that two nodes end up with the same `configEpoch`.
+이를 실시하기 위해서, 두 노드가 동일한 `configEpoch`로 완료되는 이벤트에서 **충돌 해소 알고리즘(a conflict resolution algorithm)**이 사용된다. 
+
+* IF a master node detects another master node is advertising itself with the same `configEpoch`.
 * AND IF the node has a lexicographically smaller Node ID compared to the other node claiming the same `configEpoch`.
 * THEN it increments its `currentEpoch` by 1, and uses it as the new `configEpoch`.
 
+* IF 어떤 마스터 노드가 또 다른 마스터가 자신과 동일한 `configEpoch`를 알리고 있다는 것을 감지한다.
+* AND IF 노드는 동일한 `configEpoch`를 주장하는 다른 노드에 비해서 사전적으로 더 작은 노드 ID를 가진다.
+* THEN `currentEpoch`를 1 증가시키고, 그것을 새로운 `configEpoch`로 사용한다.
+
 If there are any set of nodes with the same `configEpoch`, all the nodes but the one with the greatest Node ID will move forward, guaranteeing that, eventually, every node will pick a unique configEpoch regardless of what happened.
+만약, 동일한 `configEpoch`를 가지는 어떤 노드의 집합이 있으면, 노드 ID가 가장 큰 것을 제외한 모든 노드는 앞으로 이동할 것이고, 무슨 일이 발생했는지에 관계없이 결국 모든 노드는 유니크한 `configEpoch`를 선택할 것이 보장된다.
 
-This mechanism also guarantees that after a fresh cluster is created, all
-nodes start with a different `configEpoch` (even if this is not actually
-used) since `redis-cli` makes sure to use `CONFIG SET-CONFIG-EPOCH` at startup.
-However if for some reason a node is left misconfigured, it will update
-its configuration to a different configuration epoch automatically.
+This mechanism also guarantees that after a fresh cluster is created, all nodes start with a different `configEpoch` (even if this is not actually used) since `redis-cli` makes sure to use `CONFIG SET-CONFIG-EPOCH` at startup. However if for some reason a node is left misconfigured, it will update its configuration to a different configuration epoch automatically.
+이 메커니즘은 또한 `redis-cli`는 시작시에 `CLUSTER SET-CONFIG-EPOCH`를 사용하도록 하기 때문에, 새로운 클러스터가 생성된 이후에 모든 노드가 서로 다른 `configEpoch`로 시작하는 것을 보장한다(실제 이 메커니즘이 사용되지 않더라도). 그러나 어떤 이유로 노드가 잘못된 구성으로 남아있는 경우, 자동으로 해당 구성은 다른 구성 에포크로 업데이트될 것이다.
 
-Node resets
----
+### Node resets [IN PROGRESS]
 
-Nodes can be software reset (without restarting them) in order to be reused
-in a different role or in a different cluster. This is useful in normal
-operations, in testing, and in cloud environments where a given node can
-be reprovisioned to join a different set of nodes to enlarge or create a new
-cluster.
+Nodes can be software reset (without restarting them) in order to be reused in a different role or in a different cluster. This is useful in normal operations, in testing, and in cloud environments where a given node can be reprovisioned to join a different set of nodes to enlarge or create a new cluster.
 
-In Redis Cluster nodes are reset using the `CLUSTER RESET` command. The
-command is provided in two variants:
+In Redis Cluster nodes are reset using the `CLUSTER RESET` command. The command is provided in two variants:
 
 * `CLUSTER RESET SOFT`
 * `CLUSTER RESET HARD`
 
-The command must be sent directly to the node to reset. If no reset type is
-provided, a soft reset is performed.
+The command must be sent directly to the node to reset. If no reset type is provided, a soft reset is performed.
 
 The following is a list of operations performed by a reset:
 
@@ -961,17 +981,11 @@ The following is a list of operations performed by a reset:
 
 Master nodes with non-empty data sets can't be reset (since normally you want to reshard data to the other nodes). However, under special conditions when this is appropriate (e.g. when a cluster is totally destroyed with the intent of creating a new one), `FLUSHALL` must be executed before proceeding with the reset.
 
-Removing nodes from a cluster
----
+### Removing nodes from a cluster [IN PROGRESS]
 
-It is possible to practically remove a node from an existing cluster by
-resharding all its data to other nodes (if it is a master node) and
-shutting it down. However, the other nodes will still remember its node
-ID and address, and will attempt to connect with it.
+It is possible to practically remove a node from an existing cluster by resharding all its data to other nodes (if it is a master node) and shutting it down. However, the other nodes will still remember its node ID and address, and will attempt to connect with it.
 
-For this reason, when a node is removed we want to also remove its entry
-from all the other nodes tables. This is accomplished by using the
-`CLUSTER FORGET <node-id>` command.
+For this reason, when a node is removed we want to also remove its entry from all the other nodes tables. This is accomplished by using the `CLUSTER FORGET <node-id>` command.
 
 The command does two things:
 
@@ -982,13 +996,8 @@ The second operation is needed because Redis Cluster uses gossip in order to aut
 
 Further information is available in the `CLUSTER FORGET` documentation.
 
-Publish/Subscribe
-===
+## Publish/Subscribe [IN PROGRESS]
 
-In a Redis Cluster clients can subscribe to every node, and can also
-publish to every other node. The cluster will make sure that published
-messages are forwarded as needed.
+In a Redis Cluster clients can subscribe to every node, and can also publish to every other node. The cluster will make sure that published messages are forwarded as needed.
 
-The current implementation will simply broadcast each published message
-to all other nodes, but at some point this will be optimized either
-using Bloom filters or other algorithms.
+The current implementation will simply broadcast each published message to all other nodes, but at some point this will be optimized either using Bloom filters or other algorithms.
